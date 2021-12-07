@@ -1,0 +1,2443 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "contact": {
+      "email": "support@flussonic.com",
+      "name": "Support team",
+      "url": "https://flussonic.com/"
+    },
+    "description": "This document contains comprehensive API specification for Flussonic.\n\nYou can manage configuration and runtime status of server.\nThis API is an alternative to editing config file by hands or by script.\n\nServer configuration file is mirrored in `server_config` structure, they are similar and internal\nconfig parser validates configuration file structure according to this specification.\n\nYou must be ready that some API methods will send extra fields in responses, so your\napplication must be ready to drop them.\n\nYou must not rely on undocumented fields in the responses, they may change at any moment.\n\nFurther version of this document may mark some fields as deprecated and later there will appear\nproperties `x-delete-at` with year and month after which this field will be deleted.\n",
+    "title": "Flussonic Media Server API",
+    "version": "1.2.3"
+  },
+  "components": {
+    "schemas": {
+      "loglevel": {
+        "type": "string",
+        "enum": [
+          "none",
+          "debug",
+          "info",
+          "notice",
+          "warning",
+          "error",
+          "alert",
+          "critical"
+        ]
+      },
+      "binary_value": {
+        "type": "string"
+      },
+      "collection_response": {
+        "type": "object",
+        "properties": {
+          "estimated_count": {
+            "description": "Non precise, estimated amount of records for this query, without accounting cursors",
+            "type": "integer",
+            "nullable": true,
+            "example": 5
+          },
+          "next": {
+            "description": "Next cursor",
+            "type": "string",
+            "nullable": true,
+            "example": "JTI0cG9zaXRpb25fZ3Q9MA=="
+          },
+          "prev": {
+            "description": "Prev cursor",
+            "type": "string",
+            "nullable": true,
+            "example": "JTI0cG9zaXRpb25fbHQ9MSYlMjRyZXZlcnNlZD10cnVl"
+          },
+          "timing": {
+            "description": "Object with list of different timings that were measured during this API call",
+            "type": "object",
+            "nullable": true
+          }
+        }
+      },
+      "session_status": {
+        "enum": [
+          "establishing",
+          "running",
+          "stalling",
+          "finished"
+        ],
+        "type": "string"
+      },
+      "protocol": {
+        "type": "string",
+        "enum": [
+          "copy",
+          "fake",
+          "rtmp",
+          "rtmps",
+          "rtmpe",
+          "rtsp",
+          "rtsp-udp",
+          "rtsp2",
+          "rtsps",
+          "est",
+          "srt",
+          "mseld",
+          "shoutcast",
+          "shoutcasts",
+          "webrtc",
+          "hls",
+          "hlss",
+          "hls2",
+          "hlss2",
+          "llhls",
+          "cmaf",
+          "hls_dvr",
+          "mss_dvr",
+          "rtsp_dvr",
+          "tshttp_dvr",
+          "dash",
+          "mss",
+          "m4s",
+          "m4ss",
+          "m4f",
+          "m4fs",
+          "tshttp",
+          "tshttps",
+          "tstcp",
+          "tsssl",
+          "mkv",
+          "mkvs",
+          "flv",
+          "annexb",
+          "udp",
+          "udp1",
+          "udp2",
+          "udp3",
+          "mpts-udp",
+          "mpts-http",
+          "mpts-https",
+          "mpts-dvb",
+          "dvb",
+          "decklink",
+          "aja",
+          "v4l",
+          "v4l2",
+          "playlist",
+          "mixer",
+          "mosaic",
+          "mosaic2",
+          "timeshift",
+          "file",
+          "download",
+          "mbr",
+          "mp4",
+          "logo",
+          "jpeg",
+          "mjpeg",
+          "h323",
+          "ad_injector",
+          "ffmpeg",
+          "transponder",
+          "api"
+        ]
+      },
+      "segments_container": {
+        "type": "string",
+        "enum": [
+          "cmaf",
+          "fmp4",
+          "mpegts"
+        ]
+      },
+      "session_generic": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Unique identifier (maybe UUID) of this session.",
+            "example": "61942414-8c15-4809-8bb6-adf1ae846027"
+          },
+          "ip": {
+            "type": "string",
+            "nullable": true,
+            "description": "IP address of the connected peer",
+            "example": "172.16.25.73"
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "bytes",
+            "default": 0,
+            "description": "Transmitted bytes on this session",
+            "example": 15430404
+          },
+          "proto": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/protocol"
+              }
+            ],
+            "nullable": true,
+            "description": "Protocol of this session",
+            "example": "dash"
+          },
+          "opened_at": {
+            "type": "number",
+            "format": "utc_ms",
+            "nullable": true,
+            "description": "When this session was opened (created)",
+            "example": 1637094994
+          },
+          "started_at": {
+            "type": "number",
+            "format": "utc_ms",
+            "nullable": true,
+            "description": "When this session started transmitting frames",
+            "example": 1637095014
+          },
+          "updated_at": {
+            "type": "number",
+            "format": "utc_ms",
+            "nullable": true,
+            "description": "When this session was last time updated at",
+            "example": 1637098611
+          },
+          "closed_at": {
+            "type": "number",
+            "format": "utc_ms",
+            "nullable": true,
+            "description": "When this session was completely closed forever",
+            "example": 1637098821
+          },
+          "segments_container": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/segments_container"
+              }
+            ],
+            "nullable": true,
+            "description": "Details of the protocol: what container was used inside this protocol.\nHLS can go with MPEG-TS or fMP4 segments, DASH can be with big fMP4 or small CMAF segments.\n"
+          }
+        }
+      },
+      "session_details": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "format": "media_name",
+            "nullable": true,
+            "description": "Stream of file for this session",
+            "example": "hockey1"
+          },
+          "token": {
+            "type": "string",
+            "format": "session_token",
+            "nullable": true,
+            "description": "Token provided by the client",
+            "example": "zGAFxLkoWluO1pG7_nJmQAbCnM5"
+          },
+          "country": {
+            "type": "string",
+            "format": "iso3166",
+            "nullable": true,
+            "description": "Geolocated country for peer ip",
+            "example": "us"
+          },
+          "user_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "User-id provided by middleware authorization backend",
+            "example": "5435"
+          },
+          "user_name": {
+            "type": "string",
+            "format": "media_name",
+            "nullable": true,
+            "description": "User-provided original stream/VOD name before the rewrite of a media [*aliaser*](https://flussonic.com/doc/video-playback/media-name-aliasing/)."
+          },
+          "referer": {
+            "type": "string",
+            "format": "url",
+            "nullable": true,
+            "description": "HTTP header Referer or analog for other protocols",
+            "example": "http://my-tv-portal.local/hockey1"
+          },
+          "query_string": {
+            "type": "string",
+            "nullable": true,
+            "description": "Full query string for initial request of the session."
+          },
+          "current_time": {
+            "type": "number",
+            "format": "milliseconds",
+            "nullable": true,
+            "description": "current playback time of this session"
+          },
+          "user_agent": {
+            "type": "string",
+            "nullable": true,
+            "description": "User agent of client of applicable for selected protocol",
+            "example": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML. like Gecko) Chrome/90.0.4430.72 Safari/537.36"
+          }
+        }
+      },
+      "session": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/session_generic"
+          },
+          {
+            "$ref": "#/components/schemas/session_details"
+          }
+        ]
+      },
+      "flow_type": {
+        "enum": [
+          "file",
+          "stream"
+        ],
+        "type": "string"
+      },
+      "media_info": {
+        "type": "object",
+        "properties": {
+          "flow_type": {
+            "description": "Indicate if this is a file (with beginning and end) or an endless live stream",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/flow_type"
+              }
+            ],
+            "example": "stream"
+          },
+          "duration": {
+            "type": "number",
+            "format": "ticks",
+            "description": "Duration of this media if appliable",
+            "nullable": true
+          },
+          "title": {
+            "description": "Human readable title of this media",
+            "nullable": true,
+            "type": "string"
+          }
+        }
+      },
+      "transcoder_device": {
+        "enum": [
+          "cpu",
+          "qsv",
+          "nvenc",
+          "nvenc2",
+          "coder",
+          "omx",
+          "l4t2"
+        ],
+        "type": "string"
+      },
+      "tc_binary_value": {
+        "type": "string"
+      },
+      "tc_deviceid": {
+        "anyOf": [
+          {
+            "enum": [
+              "auto"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      },
+      "tc_label_font": {
+        "type": "object",
+        "properties": {}
+      },
+      "tc_label": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "description": "Text to burn into video frames.",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/tc_binary_value"
+              }
+            ]
+          },
+          "position": {
+            "description": "Position to burn text:\n- `t` : Top\n- `b` : Bottom \n- `r` : Right \n- `l` : Left \n- `c` : Center \n",
+            "nullable": true,
+            "enum": [
+              "tl",
+              "bl",
+              "tr",
+              "br",
+              "c",
+              "ct",
+              "cb"
+            ],
+            "type": "string"
+          },
+          "font": {
+            "description": "Font to be used for text, timestamp, subtitles burn into video frames.",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/tc_label_font"
+              }
+            ]
+          }
+        }
+      },
+      "tc_burn": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "description": "Configuration of text burn into video frames. \n",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/tc_label"
+              }
+            ]
+          },
+          "time": {
+            "description": "Configuration of timestamp burn into video frames. \n",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/tc_label"
+              }
+            ]
+          },
+          "sub": {
+            "description": "Configuration of subtitles burn into video frames. \n",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/tc_label"
+              }
+            ]
+          }
+        }
+      },
+      "tc_global": {
+        "type": "object",
+        "properties": {
+          "hw": {
+            "description": "Transcoder hardware device type to be used for transcoding a stream.",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/transcoder_device"
+              }
+            ]
+          },
+          "deviceid": {
+            "description": "Identifier of hardware device to be used for transcoding a stream.",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/tc_deviceid"
+              }
+            ]
+          },
+          "gop": {
+            "description": "GOP (group of pictures) size in frames to be used for any video track in the stream. May be overridden by track.",
+            "nullable": true,
+            "type": "integer"
+          },
+          "burn": {
+            "description": "Configuration of text, timestamp or subtitles burn into video frames. \n",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/tc_burn"
+              }
+            ]
+          }
+        }
+      },
+      "tc_decoder": {
+        "type": "object",
+        "properties": {}
+      },
+      "tc_audio_opts": {
+        "type": "object",
+        "properties": {}
+      },
+      "tc_video_opts": {
+        "type": "object",
+        "properties": {},
+        "required": [
+          "track"
+        ]
+      },
+      "transcoder_opts": {
+        "type": "object",
+        "properties": {
+          "global": {
+            "description": "Transcoder settings to be used for transcoding. \n",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/tc_global"
+              }
+            ],
+            "x-default": {
+              "$ref": "#/components/schemas/tc_global"
+            }
+          },
+          "decoder": {
+            "description": "Decoder settings to be used for transcoding. \n",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/tc_decoder"
+              }
+            ],
+            "x-default": {
+              "$ref": "#/components/schemas/tc_decoder"
+            }
+          },
+          "audio": {
+            "description": "List of audio tracks the stream audio track will be transcoded into. \n",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/tc_audio_opts"
+              }
+            ],
+            "x-default": {
+              "$ref": "#/components/schemas/tc_audio_opts"
+            }
+          },
+          "video": {
+            "description": "List of video tracks the stream video track will be transcoded into. \n",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/tc_video_opts"
+                }
+              ]
+            },
+            "type": "array",
+            "default": []
+          }
+        }
+      },
+      "dvr_base_config": {
+        "type": "object",
+        "properties": {}
+      },
+      "record_input_spec": {
+        "type": "object",
+        "properties": {}
+      },
+      "cache_spec": {
+        "type": "object",
+        "properties": {}
+      },
+      "srt_config": {
+        "type": "object",
+        "properties": {
+          "port": {
+            "description": "Listen port or host:port for this SRT configuration. Must be unique on whole server.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/listen_spec"
+              }
+            ],
+            "nullable": true
+          },
+          "minversion": {
+            "description": "Minimal version of peer allowed to connect.\nThe version format in hex is 0xXXYYZZ for x.y.z in human readable form, eg 0x010401 for \"1.4.1\"\n",
+            "type": "string",
+            "nullable": true,
+            "x-notice": "SRTO_MINVERSION (0x010000)",
+            "example": "0x10401"
+          },
+          "passphrase": {
+            "description": "Passphrase for this connection.",
+            "type": "string",
+            "nullable": true,
+            "x-notice": "SRTO_PASSPHRASE (\"\")",
+            "example": "mytopsecret"
+          }
+        }
+      },
+      "thumbnails_spec": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "description": "*Flussonic* takes a thumbnail from the specified URL on each keyframe.\nMay reduce CPU usage on IP cameras.\n",
+            "type": "string",
+            "nullable": true
+          },
+          "enabled": {
+            "description": "Whether to generate thumbnails from the video stream.",
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "stream_dvr_specific_spec": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "description": "Stream can refer to globally declared DVR. This option referes to entry in dvrs",
+            "type": "string",
+            "format": "dvr_name",
+            "nullable": true
+          },
+          "root": {
+            "description": "If no `reference` was specified, then `root` must be specified. Video recording will be made to `root`/`name` directory",
+            "type": "string",
+            "format": "dvr_url",
+            "nullable": true
+          }
+        }
+      },
+      "stream_dvr_spec": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/stream_dvr_specific_spec"
+          },
+          {
+            "$ref": "#/components/schemas/dvr_base_config"
+          }
+        ]
+      },
+      "auth_spec": {
+        "properties": {},
+        "type": "object"
+      },
+      "stream_stats": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "runtime stream id",
+            "nullable": true,
+            "example": "61893ba6-07b3-431b-b2f7-716ac1643953"
+          },
+          "source_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "current source identifier",
+            "nullable": true,
+            "example": "61893be1-054e-4acc-8d24-8ed92efe6ad0"
+          },
+          "opened_at": {
+            "type": "integer",
+            "format": "utc",
+            "description": "UTC time at which this stream was started",
+            "nullable": true,
+            "example": 1636383729
+          },
+          "backup_running": {
+            "description": "Whether a backup is currently running.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "last_dts": {
+            "type": "number",
+            "format": "ticks",
+            "description": "Last seen frame timestamp that was going out of stream",
+            "nullable": true,
+            "example": 383835646
+          },
+          "last_dts_at": {
+            "type": "number",
+            "format": "utc_ms",
+            "description": "UTC time at which last time frame was sent to stream output",
+            "nullable": true,
+            "example": 1636383841974
+          },
+          "media_info": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/media_info"
+              }
+            ],
+            "description": "Technical information about the output media content.",
+            "nullable": true
+          },
+          "inputs": {
+            "description": "Detailed runtime information about the input streams. To be removed in version 21.12 of Flussonic.",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/input_stats"
+                }
+              ]
+            },
+            "type": "array",
+            "nullable": true,
+            "deprecated": true,
+            "x-delete-at": "21.12"
+          },
+          "pushes": {
+            "description": "Detailed runtime information about the current stream pushes. To be removed in version 21.12 of Flussonic.",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/push_stats"
+                }
+              ]
+            },
+            "type": "array",
+            "nullable": true,
+            "deprecated": true,
+            "x-delete-at": "21.12"
+          }
+        }
+      },
+      "pusher_status": {
+        "anyOf": [
+          {
+            "enum": [
+              "starting",
+              "pending",
+              "retry",
+              "error"
+            ],
+            "type": "string"
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/session_status"
+              }
+            ]
+          }
+        ]
+      },
+      "play_protocols_spec": {
+        "properties": {
+          "whitelist": {
+            "description": "- Server allows playing only via listed protocols if `whitelist` option is 'true';\n- Server allows playing only via and protocols except listed if `whitelist` option is 'false';\n",
+            "default": false,
+            "type": "boolean"
+          },
+          "hls": {
+            "description": "Allow or deny to play via HLS protocol depending on `whitelist` property.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "dash": {
+            "description": "Allow or deny to play via DASH protocol depending on `whitelist` property.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "mss": {
+            "description": "Allow or deny to play via MPEG-TS over HTTP(s) protocol depending on `whitelist` property.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "hds": {
+            "description": "Allow to play via HDS protocol.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "rtmp": {
+            "description": "Allow or deny to play via RTMP protocol depending on `whitelist` property.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "rtsp": {
+            "description": "Allow or deny to play via RTSP protocol depending on `whitelist` property.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "m4f": {
+            "description": "Allow or deny to play via M4F protocol depending on `whitelist` property.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "m4s": {
+            "description": "Allow or deny to play via M4F protocol depending on `whitelist` property.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "mseld": {
+            "description": "Allow or deny to play via MSE-LD protocol depending on `whitelist` property.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "tshttp": {
+            "description": "AllAllow or deny to play via MPEG-TS over HTTP(s) protocol depending on `whitelist` property.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "webrtc": {
+            "description": "Allow or deny to play via WEB-RTC protocol depending on `whitelist` property.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "srt": {
+            "description": "Allow or deny to play via SRT protocol depending on `whitelist` property.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "shoutcast": {
+            "description": "Allow or deny to play via SHOUTCAST/ICECAST protocol depending on `whitelist` property.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "mp4": {
+            "description": "Allow or deny to download MP4 file via HTTP(s) protocol depending on `whitelist` property. Used for export MP4 file from DVR.\n",
+            "type": "boolean",
+            "nullable": true
+          },
+          "jpeg": {
+            "description": "Allow or deny to play thumbnails as JPEG via HTTP(s) protocol depending on `whitelist` property.",
+            "type": "boolean",
+            "nullable": true
+          }
+        },
+        "type": "object"
+      },
+      "stream_config": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/stream_config_specific"
+          },
+          {
+            "$ref": "#/components/schemas/stream_config_base"
+          },
+          {
+            "$ref": "#/components/schemas/stream_config_media"
+          },
+          {
+            "$ref": "#/components/schemas/stream_config_onpremises"
+          },
+          {
+            "$ref": "#/components/schemas/stream_config_single_media"
+          },
+          {
+            "$ref": "#/components/schemas/stream_config_deprecated"
+          },
+          {
+            "$ref": "#/components/schemas/stream_config_additional"
+          }
+        ]
+      },
+      "stream_config_stripped": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/stream_config_specific"
+          },
+          {
+            "$ref": "#/components/schemas/stream_config_base"
+          },
+          {
+            "$ref": "#/components/schemas/stream_config_media"
+          },
+          {
+            "$ref": "#/components/schemas/stream_config_onpremises"
+          },
+          {
+            "$ref": "#/components/schemas/stream_config_single_media"
+          },
+          {
+            "$ref": "#/components/schemas/stream_config_deprecated"
+          }
+        ]
+      },
+      "stream_config_specific": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "format": "media_name",
+            "description": "Globally unique stream name.",
+            "x-primary-key": true,
+            "nullable": true,
+            "example": "hockey1"
+          },
+          "title": {
+            "description": "Human-readable title of the stream. Provided for SDT MPEG-TS table or\nSDP RTSP title parameter.\n",
+            "type": "string",
+            "nullable": true,
+            "example": "Hockey channel"
+          },
+          "position": {
+            "type": "integer",
+            "format": "sort_index",
+            "description": "Position of the stream in order of streams in the config file, if declared.",
+            "nullable": true,
+            "example": 2
+          },
+          "named_by": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/named_by"
+              }
+            ],
+            "description": "Where the stream is initialized: config, user play/publication or remote\ncluster server.\n",
+            "nullable": true,
+            "example": "config"
+          },
+          "template": {
+            "description": "Template of this stream",
+            "type": "string",
+            "format": "media_name",
+            "nullable": true,
+            "example": "sports-hd"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "stream_config_base": {
+        "type": "object",
+        "properties": {
+          "static": {
+            "default": true,
+            "description": "Whether a stream is `static` or not. \nIf set to `True` the server will try to keep this stream running even if\nthere are no viewers or errors encountered.\n\nStreamer will restart all `static` streams even if there is any internal error and any\n`static` stream crashes.\n",
+            "type": "boolean",
+            "nullable": true
+          },
+          "disabled": {
+            "description": "Indicates if stream is disabled. Disabled streams are available only in the API\ncalls, for any streaming needs they are just like \"commented out\"\n",
+            "type": "boolean",
+            "nullable": true,
+            "example": false
+          },
+          "inputs": {
+            "description": "List of stream inputs. \n***Important:*** A stream without any inputs can receive video frames **only** if backup file is specified.\n",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/stream_input"
+                }
+              ]
+            },
+            "type": "array",
+            "nullable": true
+          },
+          "urls": {
+            "description": "Alias for `inputs` (deprecated way to work with inputs)",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/stream_input"
+                }
+              ]
+            },
+            "type": "array",
+            "nullable": true,
+            "deprecated": true,
+            "x-alias": "inputs",
+            "x-delete-at": 22.02
+          },
+          "cluster_key": {
+            "description": "Authorization key for fetching from another streamer. \nShould be configured in per each `input`\n",
+            "type": "string",
+            "nullable": true,
+            "deprecated": true,
+            "x-delete-at": 22.02
+          }
+        }
+      },
+      "stream_config_media": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "description": "Human readable name of content provider, used for example in MPEG-TS",
+            "type": "string",
+            "nullable": true,
+            "example": "SportsTV"
+          },
+          "clients_timeout": {
+            "description": "Stream's lifetime after last client has disconnected (applicable for on-demand streams only).\nCan be timeout in seconds or `false`.\n",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "nullable": true,
+            "example": 485
+          },
+          "retry_limit": {
+            "description": "Number of attempts to reconnect with a data source  (applicable for on-demand streams only, unlimited if not defined).\nIf input has not been activated after this amount of attempts, stream can shutdown till next user request.\n",
+            "type": "integer",
+            "nullable": true
+          },
+          "groups": {
+            "description": "List of groups the stream belongs to. Can be used for tagging, API calls or configuring on restreamers.",
+            "items": {
+              "type": "string",
+              "format": "group_name"
+            },
+            "type": "array",
+            "nullable": true,
+            "example": [
+              "sporthd"
+            ]
+          },
+          "source_timeout": {
+            "description": "The period of time, in seconds, for which Flussonic will wait for new frames until it considers the source as lost.\nThis is default configuration for stream, can be overriden in any input.\n",
+            "anyOf": [
+              {
+                "type": "integer",
+                "format": "seconds"
+              },
+              {
+                "enum": [
+                  false
+                ],
+                "type": "boolean"
+              }
+            ],
+            "nullable": true,
+            "example": 10
+          },
+          "backup": {
+            "description": "When all inputs are down, this can be used to show at least something to users.\nIt is important to understand that backup video behaves differently, not as inputs. \nIt is not a _last input_ in the list. After any input stops sending frames, timer starts.\nAfter `source_timeout` seconds backup starts working, while all other inputs are still trying to\nconnect and start working.\nSo backup and all inputs are working in parallel.\n",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/backup_config"
+              }
+            ],
+            "nullable": true
+          },
+          "epg_enabled": {
+            "description": "Collect EPG from input",
+            "type": "boolean",
+            "nullable": true
+          },
+          "transcoder": {
+            "description": "Configuration of the transcoder settings.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/transcoder_opts"
+              }
+            ],
+            "nullable": true
+          },
+          "thumbnails": {
+            "description": "Configuration of thumbnails generator.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/thumbnails_spec"
+              }
+            ],
+            "nullable": true
+          },
+          "dvr": {
+            "description": "Configuraton of DVR.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/stream_dvr_spec"
+              }
+            ],
+            "nullable": true
+          },
+          "auth": {
+            "description": "Configuration of authorization backend (play sessions **only**).\nShould be replaced with an `on_play` configuration similar to `on_publish`.\nMore information about `on_play` and `on_publish` [here](https://flussonic.com/doc/authorization/#enabling-playback-and-publish-sessions-authorization)\n",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/auth_spec"
+              }
+            ],
+            "nullable": true,
+            "deprecated": true,
+            "x-alias": "on_play"
+          },
+          "on_play": {
+            "description": "Configuraton of authorization backend for play sessions.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/auth_spec"
+              }
+            ],
+            "nullable": true
+          },
+          "on_publish": {
+            "description": "Configuraton of authorization backend for publish sessions.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/auth_spec"
+              }
+            ],
+            "nullable": true
+          },
+          "drm": {
+            "description": "Configuraton of Digital Rights Management system (DRM)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/drm_spec"
+              }
+            ],
+            "nullable": true
+          },
+          "protocols": {
+            "description": "Configuration to allow/forbid playing the stream via various protocols. \n- If the `whitelist` option is set to 'true', the server allows a playback only for listed protocols;\n- If the `whitelist` option is set to 'false', the server forbids a playback for listed protocols;\n- Server allows a playback for all the protocols by default.\n",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/play_protocols_spec"
+              }
+            ],
+            "nullable": true
+          },
+          "prepush": {
+            "description": "The time (in seconds) that Flussonic reserves for preloading the data, i. e. *buffering*.\nPrepush is always defined through GoP, but this option provides you with a more flexible way\nto configure the buffer size, e. g. a 1-3 or 7-10 seconds time interval.\n\nThe bigger the buffer size, the better the user experience is for the users\nwith a bad internet connection. However, the latency also increases.\n\nIf it is set to `false` to remove the latency, the stream's start time \nincreases. To decrease it, reduce the GoP size and make the bitrate larger \nor the video quality lower.\n",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "nullable": true
+          },
+          "segment_count": {
+            "description": "Number of segments stored in memory for the segment-based protocols, such as HLS and DASH.\nAdded to HLS live manifest. Do not forget that one more segment is stored for stale clients\nthat come too late, but the latest segment is not shown in the manifest.\n",
+            "type": "integer",
+            "nullable": true
+          },
+          "segment_duration": {
+            "description": "The time of the segment duration. Used for the protocols like HLS or DASH. \nThe disk config offers this value in seconds.\n",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/segment_duration"
+              }
+            ],
+            "nullable": true
+          },
+          "chunk_duration": {
+            "description": "Chunk duration in LL-HLS manifest to be used for tunning latency.",
+            "type": "number",
+            "format": "milliseconds",
+            "nullable": true
+          },
+          "url_prefix": {
+            "description": "A string starting the addresses of separate segments within a *segment-based* playlists (HLS).\nEach sub-playlist is stored on Flussonic.\n\nIf set to `false`, the configured value in a template will be disabled.\nFor more information, see [here](https://flussonic.com/doc/live-streaming/#url_prefix).\n",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/url_prefix"
+              }
+            ],
+            "nullable": true
+          },
+          "hls_scte35": {
+            "description": "Whether to enable SCTE-35 ad insertion markers signaling in HLS manifest.\nAd markers can be included in SCTE-35 (`scte35`), AWS (`aws`) formats or not included (`false`).\nMore details [here](https://flussonic.com/doc/iptv/ad-insertion-markers/#conversion-of-markers).\n",
+            "anyOf": [
+              {
+                "enum": [
+                  false
+                ],
+                "type": "boolean"
+              },
+              {
+                "enum": [
+                  "aws",
+                  "scte35"
+                ],
+                "type": "string"
+              }
+            ],
+            "nullable": true
+          },
+          "add_audio_only": {
+            "description": "Whether to add an audio-only version of an HLS stream. Used to create App Store compliant HLS streams to deliver the content to Apple iOS devices. More information [here](https://flussonic.com/doc/live-streaming/#turning-on-audio-only-hls).",
+            "type": "boolean",
+            "nullable": true
+          },
+          "pushes": {
+            "description": "A list of pushes. When a server initiates the connection and sends a stream \nto other server(s), it is called a `push`. \nMore information [here](https://flussonic.com/doc/video-playback/pushing-a-stream-to-other-servers/).\n",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/stream_push"
+                }
+              ]
+            },
+            "type": "array",
+            "nullable": true
+          }
+        }
+      },
+      "stream_config_onpremises": {
+        "type": "object",
+        "properties": {
+          "record_input": {
+            "description": "Configuration of recording the stream input as-is. Recommended for debugging needs **only**.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/record_input_spec"
+              }
+            ],
+            "nullable": true
+          },
+          "cluster_ingest": {
+            "description": "Server configuration for a cluster ingest group.\nUsed to connect several servers between each other to capture the stream(s) and prevent the failover when one of the servers (peers) fails.\nMore information about the cluster ingest [here](https://flussonic.com/doc/cluster/video-ingest-in-a-cluster/#cluster-ingest-page).\n",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/cluster_ingest_config"
+              }
+            ],
+            "nullable": true
+          },
+          "cache": {
+            "description": "Configuraton of DVR cache.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/cache_spec"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "stream_config_single_media": {
+        "type": "object",
+        "properties": {
+          "srt_play": {
+            "description": "SRT play configuration for a stream.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/srt_config"
+              }
+            ],
+            "nullable": true
+          },
+          "srt_publish": {
+            "description": "SRT publishing configuration for a stream.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/srt_config"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "stream_config_deprecated": {
+        "type": "object",
+        "properties": {}
+      },
+      "stream_config_additional": {
+        "type": "object",
+        "properties": {
+          "config_on_disk": {
+            "description": "Part of the effective config from the configuration file.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/stream_config_stripped"
+              }
+            ],
+            "nullable": true
+          },
+          "config_override": {
+            "description": "Part of the effective config overridden in runtime, e. g. `on_play`, `on_publish`.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/stream_config_stripped"
+              }
+            ],
+            "nullable": true
+          },
+          "stats": {
+            "description": "Stream's metrics and other statistical information.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/stream_stats"
+              }
+            ],
+            "readOnly": true,
+            "nullable": true
+          }
+        }
+      },
+      "push_stats": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "runtime pusher instance id",
+            "nullable": true
+          },
+          "opened_at": {
+            "type": "integer",
+            "format": "utc",
+            "description": "UTC time at which this instance of pusher was created",
+            "nullable": true
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "bytes",
+            "description": "Amount of bytes that were sent since pusher was created",
+            "nullable": true
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/pusher_status"
+              }
+            ],
+            "description": "Current status of this pusher",
+            "nullable": true
+          },
+          "retries": {
+            "description": "How many retries were made since start or last successful push",
+            "type": "integer",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "opened_at"
+        ],
+        "type": "object"
+      },
+      "network_port": {
+        "maximum": 65536,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "listen_spec": {
+        "anyOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/network_port"
+              }
+            ]
+          },
+          {
+            "type": "string",
+            "format": "host_with_port"
+          }
+        ]
+      },
+      "input_stats": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "runtime input instance id",
+            "nullable": true
+          },
+          "opened_at": {
+            "type": "integer",
+            "format": "utc",
+            "description": "UTC time at which this instance of input was created",
+            "nullable": true
+          },
+          "ip": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/network_addr"
+              }
+            ],
+            "nullable": true,
+            "description": "IP address of peer"
+          },
+          "bytes": {
+            "type": "integer",
+            "description": "Amount of bytes that were sent since input was created",
+            "nullable": true
+          },
+          "error": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/binary_value"
+              }
+            ],
+            "description": "Information about last source error",
+            "nullable": true
+          },
+          "media_info": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/media_info"
+              }
+            ],
+            "description": "Media info structure that describes input content",
+            "nullable": true
+          },
+          "last_dts": {
+            "type": "number",
+            "format": "ticks",
+            "description": "Last seen frame timestamp that was going from this input",
+            "nullable": true
+          },
+          "last_dts_at": {
+            "type": "number",
+            "format": "utc_ms",
+            "description": "UTC time at which last time frame was read from this input",
+            "nullable": true
+          },
+          "url": {
+            "type": "string",
+            "format": "url",
+            "nullable": true,
+            "description": "Actual url after all redirects"
+          },
+          "active": {
+            "description": "Indicates if this input is selected as active by stream",
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "segment_duration": {
+        "type": "number",
+        "format": "utc_ms"
+      },
+      "stream_push": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "description": "Target URL to push a video stream to.",
+            "type": "string",
+            "nullable": true
+          },
+          "stats": {
+            "description": "Detailed runtime information about the push.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/push_stats"
+              }
+            ],
+            "nullable": true
+          },
+          "multicast_loop": {
+            "description": "Whether to capture multicast on the same server. \nSet `multicast_loop` flag for UDP MPEG-TS push.\n",
+            "type": "boolean",
+            "nullable": true
+          },
+          "retry_limit": {
+            "description": "The maximum number of times *Flussonic* retries to push the stream.",
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "stream_input": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/stream_input_base"
+          },
+          {
+            "$ref": "#/components/schemas/stream_input_deprecated"
+          },
+          {
+            "$ref": "#/components/schemas/stream_input_fake"
+          },
+          {
+            "$ref": "#/components/schemas/stream_input_h323"
+          },
+          {
+            "$ref": "#/components/schemas/stream_input_hls"
+          },
+          {
+            "$ref": "#/components/schemas/stream_input_rtmp"
+          },
+          {
+            "$ref": "#/components/schemas/stream_input_rtsp"
+          },
+          {
+            "$ref": "#/components/schemas/stream_input_sdi"
+          },
+          {
+            "$ref": "#/components/schemas/stream_input_srt"
+          },
+          {
+            "$ref": "#/components/schemas/stream_input_tshttp"
+          },
+          {
+            "$ref": "#/components/schemas/stream_input_webrtc"
+          }
+        ]
+      },
+      "stream_input_base": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "description": "Unified URL to connect to the source and get the stream.\nHowever, not all protocols use URLs to describe the peer-to-peer connection.\n\nFor instance, WebRTC, SRT, and RTMP. \n\nWebRTC uses SDP (Session Description Protocol) to describe the negotiation between the peers.\n\nSRT requires IP and port, so we create an artificial URL to specify the options to manage the data interchange.\n\nRTMP uses a special URL consisting of at least two segments. Flussonic parses the URL and splits it into parts, \nusing the first segment as an RTMP application name.\n",
+            "type": "string",
+            "format": "input_url",
+            "nullable": true
+          },
+          "stats": {
+            "description": "Detailed runtime information about the input.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/input_stats"
+              }
+            ],
+            "nullable": true
+          },
+          "user_agent": {
+            "type": "string",
+            "nullable": true,
+            "description": "User agent. Can be modified if a protocol allows it."
+          },
+          "cluster_key": {
+            "type": "string",
+            "nullable": true,
+            "description": "Authorization key used to fetch the stream from another streamer in a cluster."
+          },
+          "via": {
+            "type": "string",
+            "format": "agent_url",
+            "nullable": true,
+            "description": "Agent ID. Used as a proxy to connect to the input server."
+          },
+          "max_bitrate": {
+            "description": "Flussonic will check input bitrate and if it overflows this value, it will disconnect input.",
+            "type": "integer",
+            "format": "speed",
+            "nullable": true
+          },
+          "remote_dvr": {
+            "enum": [
+              "nochain",
+              "chain",
+              "none"
+            ],
+            "type": "string",
+            "nullable": true,
+            "description": "Mode to describe the interconnection with a DVR on a remote server.\nAllows to chain requests to other servers or read-only from a peer.\n"
+          }
+        }
+      },
+      "stream_input_deprecated": {
+        "type": "object",
+        "properties": {}
+      },
+      "stream_input_fake": {
+        "type": "object",
+        "properties": {
+          "width": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Width of an artificially created test video stream. \nApplicable for the `fake://fake` URL.\n"
+          },
+          "height": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Height of an artificially created test video stream. \nApplicable for the the `fake://fake` URL.\n"
+          }
+        }
+      },
+      "stream_input_h323": {
+        "type": "object",
+        "properties": {}
+      },
+      "stream_input_hls": {
+        "type": "object",
+        "properties": {}
+      },
+      "stream_input_rtmp": {
+        "type": "object",
+        "properties": {}
+      },
+      "stream_input_rtsp": {
+        "type": "object",
+        "properties": {
+          "rtp": {
+            "enum": [
+              "udp"
+            ],
+            "type": "string",
+            "nullable": true,
+            "description": "Whether to force UDP to capture a video from RTSP cameras."
+          },
+          "wait_rtcp": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Whether to wait for the full RTP time synchronization before the frames processing from the RTSP camera.\n"
+          }
+        }
+      },
+      "stream_input_sdi": {
+        "type": "object",
+        "properties": {}
+      },
+      "stream_input_srt": {
+        "type": "object",
+        "properties": {}
+      },
+      "stream_input_tshttp": {
+        "type": "object",
+        "properties": {}
+      },
+      "stream_input_webrtc": {
+        "type": "object",
+        "properties": {}
+      },
+      "drm_spec": {
+        "properties": {},
+        "required": [
+          "vendor"
+        ],
+        "type": "object"
+      },
+      "named_by": {
+        "enum": [
+          "config",
+          "user",
+          "remote"
+        ],
+        "type": "string"
+      },
+      "backup_config": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "description": "Name of file (including VOD location) that should be played if all inputs are down.\nYour last chance to show that your service is still alive, but maybe without\ncontent.\n\nImportant: This IS name in VOD location, not a path to file on local disk.\nYou need to configure VOD location first and then put here name of file\nin this vod location.\n",
+            "type": "string",
+            "nullable": true,
+            "example": "vod/blank.mp4"
+          },
+          "transcode": {
+            "description": "If this flag is set, then all backup frames will be passed through transcoder.\nOtherwise they will bypass as is to output stream.\n\nShould not set it to false unless transcoder has the same configuration as the one\nthat was used when this video file was prepared.\n",
+            "type": "boolean",
+            "nullable": true
+          },
+          "dvr": {
+            "description": "Set this flag to record backup to DVR. Server will not record backup into DVR by default.",
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "cluster_ingest_config": {
+        "type": "object",
+        "properties": {
+          "capture_at": {
+            "description": "Preferred server for running this stream on.",
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "url_prefix": {
+        "anyOf": [
+          {
+            "enum": [
+              false
+            ],
+            "type": "boolean"
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "network_addr": {
+        "type": "string",
+        "minLength": 1
+      },
+      "config_version": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      },
+      "config_path_segment": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "string",
+            "x-atom": true
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      },
+      "config_error_status": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "description": "Short error description.",
+            "type": "string",
+            "x-atom": true,
+            "example": "bad_url"
+          },
+          "config": {
+            "description": "Partial configuration that can be recovered when an error occurs.",
+            "type": "object",
+            "nullable": true
+          },
+          "line": {
+            "description": "Line number pointing to where an error was detected.",
+            "type": "integer",
+            "nullable": true,
+            "example": 15
+          },
+          "first_error_line": {
+            "description": "If an error takes up to several lines, it is the first line where the error was detected.",
+            "type": "integer",
+            "nullable": true,
+            "example": 14
+          },
+          "col": {
+            "description": "The column number pointing to where the error was detected.",
+            "type": "integer",
+            "nullable": true,
+            "example": 20
+          },
+          "first_error_col": {
+            "description": "Last column where we saw something valid.",
+            "type": "integer",
+            "nullable": true,
+            "example": 5
+          },
+          "path": {
+            "description": "Config path to the erroneous element.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/config_path_segment"
+            },
+            "nullable": true,
+            "example": [
+              "streams",
+              0,
+              "inputs",
+              0,
+              "url",
+              "input_url"
+            ]
+          },
+          "detail": {
+            "description": "Some other details that may help to identify the error.",
+            "type": "object",
+            "nullable": true
+          }
+        }
+      },
+      "server_stats": {
+        "type": "object",
+        "properties": {
+          "config_version": {
+            "description": "Current runtime version of config. We do not declare exact structure, but we promise\nthat it will be always comparable and increasing (if server has proper NTP configuration, of course).\nRight now it is a tuple of server start time and incrementing version of config.\n",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/config_version"
+              }
+            ],
+            "nullable": true,
+            "example": [
+              1636709231,
+              4
+            ]
+          },
+          "server_version": {
+            "description": "Package version of thi server. Maybe simple number of release like 21.11 or more complicated if you have installed rolling release.",
+            "type": "string",
+            "format": "server_version",
+            "nullable": true
+          },
+          "next_version": {
+            "description": "We will notify you here that newer version is available in repository.",
+            "type": "string",
+            "format": "server_version",
+            "nullable": true
+          },
+          "streamer_status": {
+            "description": "Flussonic will always try to start even if there are severe errors that do not\nallow functioning.\n\nStatus `starting` means that you should wait for some reasonable time (not more than\na minute).\n\nStatus `running` means that all configuration was loaded, howerer you need to understand\nthat it doesn't mean that service is provided properly. This status gives no idea about\nyour streams.\n\nAll other statuses means that you need to hurry up and fix some severe problem on server\nthat is not repairable by Flussonic itself.\n",
+            "type": "string",
+            "enum": [
+              "no_config",
+              "broken_config",
+              "license_failure",
+              "no_license",
+              "starting",
+              "running"
+            ],
+            "nullable": true
+          },
+          "hostname": {
+            "description": "Hostname of your server. Please, use FQDN, do not leave your linux misconfigured.",
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "description": "Unique runtime ID of this instance. Will change on next restart.",
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "example": "61893b15-75b2-4fcb-b4cf-ae1dd0858ea2"
+          },
+          "started_at": {
+            "description": "Boot time of this instance",
+            "type": "integer",
+            "format": "utc",
+            "nullable": true
+          },
+          "text_alerts": {
+            "description": "Some Flussonic subsystems may want to draw your attention to some circumstances that you should fix. Get them here in human readable format",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "nullable": true
+          }
+        }
+      },
+      "server_config": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/server_config_base"
+          },
+          {
+            "$ref": "#/components/schemas/server_config_full"
+          }
+        ]
+      },
+      "server_config_base": {
+        "type": "object",
+        "properties": {
+          "http": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/listen_spec"
+                }
+              ]
+            },
+            "default": [],
+            "description": "List of http ports or host:port that well be used for listening plain http protocol"
+          },
+          "https": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/listen_spec"
+                }
+              ]
+            },
+            "default": [],
+            "description": "List of https ports or host:port specs. Do not forget that you need to provide valid certificate and you must have valid domain name for it."
+          },
+          "admin_http": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/listen_spec"
+                }
+              ]
+            },
+            "default": [],
+            "description": "Move API calls to another port. When this is enabled, Flussonic will not respond to API calls on `http` port."
+          },
+          "admin_https": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/listen_spec"
+                }
+              ]
+            },
+            "default": [],
+            "description": "Move API calls to admin_https port."
+          },
+          "rtsp": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/listen_spec"
+              }
+            ],
+            "nullable": true,
+            "description": "RTSP listening port."
+          },
+          "rtsps": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/listen_spec"
+              }
+            ],
+            "nullable": true,
+            "description": "RTSP(S) listening port. Not a standard thing, but ffmpeg can connect to RTSP via SSL"
+          },
+          "turn": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/listen_spec"
+              }
+            ],
+            "nullable": true,
+            "description": "TURN port for your WebRTC installation."
+          },
+          "rtmp": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/listen_spec"
+              }
+            ],
+            "nullable": true,
+            "description": "RTMP port"
+          },
+          "rtmps": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/listen_spec"
+              }
+            ],
+            "nullable": true,
+            "description": "RTMPS port"
+          },
+          "snmp": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/listen_spec"
+              }
+            ],
+            "nullable": true,
+            "description": "SNMP listen port"
+          },
+          "srt": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/listen_spec"
+              }
+            ],
+            "nullable": true,
+            "description": "Global SRT listen port. It is possible to use single port for playback and publish, but not really compatible with clients.\nConsider configuring separate ports for playback, publish for each stream."
+          },
+          "srt_play": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/srt_config"
+              }
+            ],
+            "nullable": true,
+            "description": "SRT play configuration with single-port mode. Not supported by many clients, better use per-stream mode."
+          },
+          "srt_publish": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/srt_config"
+              }
+            ],
+            "nullable": true,
+            "description": "SRT publish configuration with single-port mode. Not supported by many clients, better use per-stream mode."
+          },
+          "geoip": {
+            "type": "string",
+            "format": "disk_path",
+            "nullable": true,
+            "description": "Use your own GeoIP database."
+          },
+          "loglevel": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/loglevel"
+              }
+            ],
+            "nullable": true,
+            "description": "Raise loglevel to debug if you want to."
+          },
+          "stats": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/server_stats"
+              }
+            ],
+            "description": "Server runtime stats",
+            "nullable": true
+          }
+        }
+      },
+      "server_config_full": {
+        "type": "object",
+        "properties": {}
+      },
+      "streams_list": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/collection_response"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "streams": {
+                "items": {
+                  "$ref": "#/components/schemas/stream_config"
+                },
+                "type": "array",
+                "description": "List of fetched according to query parameters streams"
+              }
+            }
+          }
+        ]
+      },
+      "sessions_list": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/collection_response"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "sessions": {
+                "type": "array",
+                "description": "List of fetched according to query parameters sessions",
+                "items": {
+                  "$ref": "#/components/schemas/session"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "securitySchemes": {
+      "basicAuth": {
+        "scheme": "basic",
+        "type": "http"
+      },
+      "bearerAuth": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "paths": {
+    "/streams": {
+      "get": {
+        "operationId": "streams_list",
+        "summary": "List streams",
+        "description": "This API method is one of the most important in whole API, because it gives list of all streams,\nincluding:\n\n* configured (maybe not running at the moment)\n* running (including those that are created via template and do not have own disk configuration)\n* remote (available from other servers)\n* only recorded\n\nTogether with stream_save you can manage streams in flussonic.\n\nYou can pass all stream configuration options to query string for filtering, not only specified in parameters.\n\nThis method and stream_get will return `effective stream configuration` with all templates, overrides, defaults\nincluded into this response. It is not exactly what can you see in disk config. If you have configured\nthis stream in disk file, then original disk configuration can be found in field `config_on_disk`.\n\nWhat you get from this API call is not what you write to `stream_save`.\n",
+        "parameters": [
+          {
+            "name": "select",
+            "description": "Comma-separated list of fields (including nested) that will be returned",
+            "explode": false,
+            "in": "query",
+            "required": false,
+            "schema": {
+              "example": "name,inputs,stats,dvr.root",
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "name": "sort",
+            "description": "Composite sort direction.\nDefault sort order is `named_by (config,user,remote)`, `position`, `name`\n",
+            "explode": false,
+            "in": "query",
+            "required": false,
+            "schema": {
+              "example": "-stats.bitrate,name,position",
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "name": "limit",
+            "description": "Limit select count in collection to N elements.  Default value is 100",
+            "explode": false,
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "example": 100
+            },
+            "style": "form"
+          },
+          {
+            "name": "cursor",
+            "description": "Properly encoded analog of offset, allowing to read next bunch of items. We do not offer common `offset` fields, use please cursor for predictable fetching of quickly changing list of items.",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "JTI0cG9zaXRpb25fZ3Q9MQ=="
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/streams_list"
+                }
+              }
+            },
+            "description": "Response"
+          }
+        },
+        "tags": [
+          "stream"
+        ]
+      }
+    },
+    "/streams/{name}": {
+      "get": {
+        "operationId": "stream_get",
+        "summary": "Get one stream",
+        "description": "Method allows to fetch single stream. Referer to `streams_list` operation to find out what data will be returned in this method.",
+        "parameters": [
+          {
+            "description": "stream name",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "example": "abc",
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/stream_config"
+                }
+              }
+            },
+            "description": "Whole stream"
+          }
+        },
+        "tags": [
+          "stream"
+        ]
+      },
+      "put": {
+        "operationId": "stream_save",
+        "summary": "Save stream",
+        "description": "Create or update stream by its name.\nIf stream doesn't exists in disk config, it will be created.\n\nIf you try to update stream that is started from template by user request,\nhaving `named_by=user`, new stream will be created in disk config.\n\nIf you pass only partial stream configuration, this field will be updated, not whole stream.\n\nPass `\"$reset\": true` option to replace stream configuration with provided one.\n",
+        "parameters": [
+          {
+            "name": "name",
+            "description": "stream name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "example": "abc",
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "name": "part",
+            "description": "Stream is configured by several origins of configuration. It may be `config_on_disk`,\nor temporary runtime `config_override` that can be provided via `on_play` or `on_publish`\nbackend, or edited via this API call if you pass `config_override` to this parameter\n",
+            "in": "query",
+            "schema": {
+              "default": "config_on_disk",
+              "type": "string",
+              "enum": [
+                "config_override",
+                "config_on_disk"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Partial stream configuration",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/stream_config"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated stream",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/stream_config"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "stream"
+        ]
+      },
+      "delete": {
+        "operationId": "stream_delete",
+        "summary": "Delete the stream",
+        "description": "You can delete `config_override` by this api call if you want\nto remove all runtime overrides.\n\nIf you do not specify any `part` parameter, this stream will be deleted from `config_on_disk`\nand if it was `named_by: config`, then it will immediately stop.\n",
+        "parameters": [
+          {
+            "name": "name",
+            "description": "stream name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "example": "abc",
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "name": "part",
+            "description": "part of config to delete",
+            "in": "query",
+            "schema": {
+              "default": "config_on_disk",
+              "type": "string",
+              "enum": [
+                "config_override",
+                "config_on_disk"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        },
+        "tags": [
+          "stream"
+        ]
+      }
+    },
+    "/sessions": {
+      "get": {
+        "operationId": "sessions_list",
+        "summary": "List sessions",
+        "description": "This method returns list of opened play sessions.\n\nAt this moment sessions are filtered only to `type=play`, however later\nwe may add additional sessions like `publish`, `push` or `ingest`\n",
+        "parameters": [
+          {
+            "description": "Comma-separated list of fields (including nested) that will be returned",
+            "explode": false,
+            "in": "query",
+            "name": "select",
+            "required": false,
+            "schema": {
+              "example": "name,bytes,created_at",
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "description": "Composite sort direction",
+            "explode": false,
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "example": "-created_at,name",
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "description": "Limit select count in collection to N elements",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "example": 100
+            },
+            "style": "form"
+          },
+          {
+            "description": "Properly encoded analog of offset, allowing to read next bunch of items",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "JTI0cG9zaXRpb25fZ3Q9MQ=="
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/sessions_list"
+                }
+              }
+            },
+            "description": "Response"
+          }
+        },
+        "tags": [
+          "session"
+        ]
+      }
+    },
+    "/config": {
+      "get": {
+        "operationId": "config_get",
+        "summary": "Get server config",
+        "description": "Method allows to fetch global server configuration and current runtime status.\n",
+        "parameters": [
+          {
+            "name": "Accept",
+            "description": "Ask for `text/plain` to get original text config.\nBy default it will be `application/json`.\n",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "server config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/server_config"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/config_error_status"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "config"
+        ]
+      },
+      "put": {
+        "operationId": "config_save",
+        "summary": "Save server config",
+        "description": "Create or update global server configuration.\n",
+        "requestBody": {
+          "description": "Partial or full server configuration",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/server_config"
+              }
+            },
+            "text/plain": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/server_config"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/config_error_status"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "config"
+        ]
+      },
+      "post": {
+        "operationId": "config_validate",
+        "summary": "Validate config",
+        "description": "Just parse and validate config, nothing is saved.\n\nProvide JSON structure or plain text.\n\nTake a look at this example:\n```\ncurl -d 'http 80; stream mystream { input \"\"; }' \\\n  -H 'Content-Type: text/plain' \\\n  -sS http://login:pass@localhost:8080/streamer/api/v3/config | jq\n{\n  \"col\": 34,\n  \"config\": {\n    \"http\": [\n      \"80\"\n    ],\n    \"streams\": [\n      {\n        \"inputs\": [\n          {\n            \"url\": \"\"\n          }\n        ],\n        \"name\": \"mystream\"\n      }\n    ]\n  },\n  \"detail\": \"\",\n  \"error\": \"bad_url\",\n  \"line\": 1,\n  \"path\": [\n    \"streams\",\n    0,\n    \"inputs\",\n    0,\n    \"url\",\n    \"input_url\"\n  ]\n}\n```\n\nYou can see that it is possible to fix error on column 34 where bad, empty url was saved.\n",
+        "requestBody": {
+          "description": "Partial or full server configuration",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/server_config"
+              }
+            },
+            "text/plain": {
+              "schema": {
+                "type": "string"
+              },
+              "example": "http 80;\n\nstream mystream {\n  input udp://239.0.0.1:1234;\n  transcoder vb=2048k ab=64k;\n}\n"
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/server_config"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/config_error_status"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "config"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "basicAuth": []
+    },
+    {
+      "bearerAuth": []
+    }
+  ],
+  "servers": [
+    {
+      "description": "your local installation",
+      "url": "http://localhost:8080/streamer/api/v3"
+    }
+  ],
+  "tags": []
+}
