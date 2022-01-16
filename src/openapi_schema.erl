@@ -4,6 +4,7 @@
 -export([process/2]).
 
 
+-define(IS_SCALAR(Scalar), (Scalar == <<"integer">> orelse Scalar == <<"number">> orelse Scalar == <<"string">> orelse Scalar == <<"boolean">>)).
 
 
 process(Input, #{} = Opts) ->
@@ -76,6 +77,23 @@ encode3(#{anyOf := Choices}, Opts, Input, Path) ->
   Encoded = F(Choices, #{error => unmatched_anyOf, path => Path}),
   Encoded;
 
+encode3(#{oneOf := Choices}, Opts, Input, Path) ->
+  EncodedList = lists:map(fun({Choice,I}) ->
+    case encode3(Choice, Opts, Input, Path ++ [I]) of
+      {error, E} -> {error, E};
+      V -> {ok, V}
+    end
+  end, lists:zip(Choices,lists:seq(0,length(Choices)-1))),
+  %% Может получится несколько валидных ответов, выбираем непустой
+  case [M || {ok, #{} = M} <- EncodedList, map_size(M) > 0] of
+    [Encoded|_] -> Encoded;
+    _ ->
+      case [V || {ok, V} <- EncodedList] of
+        [Encoded|_] -> Encoded;
+        _ -> hd(EncodedList)
+      end
+  end;
+
 encode3(#{type := <<"object">>, properties := Properties}, #{query := Query} = Opts, Input, Path) ->
   Artificial = #{
     '$position' => #{type => <<"integer">>},
@@ -137,8 +155,7 @@ encode3(#{type := <<"array">>, items := ItemSpec}, Opts, Input, Path) when is_li
 encode3(#{type := <<"string">>}, #{query := true}, #{} = Input, _Path) ->
   Input;
 
-encode3(#{type := Scalar} = Schema, #{query := true} = Opts, #{} = Input, Path) when 
-  Scalar == <<"integer">> orelse Scalar == <<"number">> orelse Scalar == <<"string">> ->
+encode3(#{type := Scalar} = Schema, #{query := true} = Opts, #{} = Input, Path) when ?IS_SCALAR(Scalar) ->
   Encoded = lists:foldl(fun
     (_,{error,E}) ->
       {error,E};
@@ -154,6 +171,17 @@ encode3(#{type := Scalar} = Schema, #{query := true} = Opts, #{} = Input, Path) 
     {error, _} -> Encoded;
     _ -> maps:from_list(Encoded)
   end;
+
+encode3(#{type := Scalar} = Schema, #{query := true} = Opts, [<<_/binary>>|_] = Input, Path) when ?IS_SCALAR(Scalar) ->
+  lists:foldl(fun
+    (_, {error, E}) ->
+      {error, E};
+    (OneInput, Acc) ->
+      case encode3(Schema, Opts, OneInput, Path) of
+        {error, E} -> {error, E};
+        Value -> Acc ++ [Value]
+      end
+  end, [], Input);
 
 
 encode3(#{type := <<"integer">>}, #{auto_convert := Convert}, Input, Path) ->
@@ -182,17 +210,6 @@ encode3(#{type := <<"number">>}, #{auto_convert := Convert}, Input, Path) ->
       end;
     _ -> {error, #{error => not_number, path => Path, input => Input}}
   end;
-
-encode3(#{type := <<"string">>} = Schema, #{query := true} = Opts, [<<_/binary>>|_] = Input, Path) ->
-  lists:foldl(fun
-    (_, {error, E}) ->
-      {error, E};
-    (OneInput, Acc) ->
-      case encode3(Schema, Opts, OneInput, Path) of
-        {error, E} -> {error, E};
-        Value -> Acc ++ [Value]
-      end
-  end, [], Input);
 
 encode3(#{enum := Choices, type := <<"string">>}, #{auto_convert := Convert}, Input, Path) ->
   InputValue = case Input of

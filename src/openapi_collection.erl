@@ -97,6 +97,7 @@ parse_qs_api([{Key,Value}|Qs], Query, Opts) ->
   L3 = size(Key) - 5,
   Filter = maps:get(filter, Query, #{}),
   {Key1, Value1} = case Key of
+    <<Key0:L1/binary, "_ne">> -> {Key0, #{'$ne' => Value}};
     <<Key0:L1/binary, "_gt">> -> {Key0, #{'$gt' => Value}};
     <<Key0:L1/binary, "_lt">> -> {Key0, #{'$lt' => Value}};
     <<Key0:L1/binary, "_is">> when Value == <<"null">> -> {Key0, null};
@@ -138,6 +139,7 @@ qs(#{} = Query) ->
 encode_qs_api2([{filter,Filter}|Query]) ->
   Enc = fun
     Enc({Key,V}) when is_atom(Key) -> Enc({atom_to_binary(Key,latin1),V});
+    Enc({Key,#{'$ne' := V}}) -> [{<<Key/binary,"_ne">>, V}];
     Enc({Key,#{'$gt' := V}}) -> [{<<Key/binary,"_gt">>, V}];
     Enc({Key,#{'$lt' := V}}) -> [{<<Key/binary,"_lt">>, V}];
     Enc({Key,#{'$gte' := V}}) -> [{<<Key/binary,"_gte">>, V}];
@@ -226,20 +228,20 @@ list(Collection, #{} = Query0) ->
   Timing = maps:get(timing, Query, #{}),
   Cursor = maps:get(cursor, Query, #{}),
 
-  T2 = erlang:system_time(milli_seconds),
+  T2 = minute:now_ms(),
   IndexedCollection = lists:zipwith(fun(P,S) -> S#{'$position' => P} end, lists:seq(0,length(Collection)-1), Collection),
 
   Reversed = maps:get(reversed, Cursor, false),
   SortedCollection = sort_collection(maps:get(sort, Query), IndexedCollection, Reversed),
 
-  T3 = erlang:system_time(milli_seconds),
+  T3 = minute:now_ms(),
 
   {FilteredCollection, _} = filter_collection(maps:get(filter, Query, #{}), SortedCollection),
   {CursorFilteredCollection, HasLess} = filter_collection(maps:get(filter, Cursor, #{}), FilteredCollection),
 
-  T4 = erlang:system_time(milli_seconds),
+  T4 = minute:now_ms(),
   {LimitedCollection, HasMore} = limit_collection(maps:get(limit, Query, undefined), CursorFilteredCollection),
-  T5 = erlang:system_time(milli_seconds),
+  T5 = minute:now_ms(),
   SelectedCollection = select_fields(maps:get(select, Query, undefined), LimitedCollection),
   ReversedCollection = case Reversed of
     true -> lists:reverse(SelectedCollection);
@@ -247,7 +249,7 @@ list(Collection, #{} = Query0) ->
   end,
   ClearedCollection = [maps:remove('$position',S) || S <- ReversedCollection],
   ResultSet = ClearedCollection,
-  T6 = erlang:system_time(milli_seconds),
+  T6 = minute:now_ms(),
 
   % D = fun(List) ->
   %   [maps:get(name,N) || N <- List]
@@ -320,6 +322,9 @@ filter2({Key,not_null}, Item) ->
 filter2({Key,null}, Item) ->
   getkey(Key,Item) == undefined;
 
+filter2({Key,#{'$ne' := Value}}, Item) ->
+  getkey(Key,Item) =/= Value;
+
 filter2({Key,#{'$gt' := Value}}, Item) ->
   getkey(Key,Item) > Value;
 
@@ -366,6 +371,9 @@ unwrap_kv(#{} = Filter) ->
 
 unwrap_kv2([], _Prefix) ->
   [];
+
+unwrap_kv2([{Key, #{'$ne' := V} = Value}|List], Prefix) ->
+  [{Prefix ++ [Key], #{'$ne' => V}} | unwrap_kv2([{Key, maps:remove('$ne',Value)}|List], Prefix)];
 
 unwrap_kv2([{Key, #{'$gt' := V} = Value}|List], Prefix) ->
   [{Prefix ++ [Key], #{'$gt' => V}} | unwrap_kv2([{Key, maps:remove('$gt',Value)}|List], Prefix)];

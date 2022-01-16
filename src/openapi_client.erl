@@ -78,16 +78,22 @@ call(#{schema := Schema, uri := URI}, OperationId, Args) ->
             #{} when ResponseContentType == 'text/plain' ->
               Bin;
             undefined when Code == 204 ->
-              ok
+              ok;
+            _ ->
+              Bin
           end,
           case Code of
             200 -> Response1;
             204 -> Response1;
+            404 -> {error, enoent};
             _ -> {error, {Code, Response1}}
           end;
         {ok, {{404,_},_,Body}} ->
           ?LOG_INFO("~s ~s -> 404 ~p", [Method, uri_string:recompose(RequestURI), Body]),
           {error, enoent};
+        {ok, {{503,_},_,Body}} ->
+          ?LOG_INFO("~s ~s -> 503 ~p", [Method, uri_string:recompose(RequestURI), Body]),
+          {error, unavailable};
         {ok, {{403,_},_,_}} ->
           ?LOG_INFO("~s ~s -> 403", [Method, uri_string:recompose(RequestURI)]),
           {error, denied};
@@ -161,6 +167,9 @@ substitute_args2(Parameters, URI, Query, Headers, _, [{raw_body,Value}|Args]) ->
 
 substitute_args2(Parameters, URI, Query, Headers, Body, [{originator,Value}|Args]) ->
   substitute_args2(Parameters, URI, Query, Headers++[{"X-Originator",Value}], Body, Args);
+
+substitute_args2(Parameters, URI, Query, Headers, Body, [{authorization,Value}|Args]) ->
+  substitute_args2(Parameters, URI, Query, Headers++[{"Authorization",Value}], Body, Args);
 
 substitute_args2(Parameters, URI, Query, Headers, Body, [{Key_,Value}|Args]) ->
   Key = atom_to_binary(Key_,latin1),

@@ -25,7 +25,7 @@ groups() ->
   ]}].
 
 init_per_suite(Config) ->
-  SchemaPath = filename:join(code:lib_dir(openapi_handler,test),"schema.json"),
+  SchemaPath = filename:join(code:lib_dir(web,priv),"schema-v3-private.json"),
   openapi_handler:load_schema(SchemaPath, test_openapi),
   Config.
 
@@ -123,14 +123,14 @@ dataset() ->
                   media_info =>
                       #{tracks =>
                             [#{bitrate => 83,codec => h264,content => video,
-                               fps => 24.0,height => 160,lang => <<"eng">>,
+                               fps => 24.0,height => 160,language => <<"eng">>,
                                last_gop => 48,level => <<"3.0">>,
                                pix_fmt => yuv420p,pixel_height => 160,
                                pixel_width => 240,profile => <<"Baseline">>,
                                sar_height => 1,sar_width => 1,
                                track_id => <<"v1">>,width => 240},
                              #{bitrate => 54,channels => 2,codec => aac,
-                               content => audio,lang => <<"eng">>,
+                               content => audio,language => <<"eng">>,
                                sample_rate => 48000,track_id => <<"a1">>}]},
                   opened_at => 1631102868058,out_bandwidth => 1,
                   output_bitrate => 137,publish_enabled => false,
@@ -157,14 +157,14 @@ dataset() ->
                   media_info =>
                       #{tracks =>
                             [#{bitrate => 83,codec => h264,content => video,
-                               fps => 24.0,height => 160,lang => <<"eng">>,
+                               fps => 24.0,height => 160,language => <<"eng">>,
                                last_gop => 48,level => <<"3.0">>,
                                pix_fmt => yuv420p,pixel_height => 160,
                                pixel_width => 240,profile => <<"Baseline">>,
                                sar_height => 1,sar_width => 1,
                                track_id => <<"v1">>,width => 240},
                              #{bitrate => 54,channels => 2,codec => aac,
-                               content => audio,lang => <<"eng">>,
+                               content => audio,language => <<"eng">>,
                                sample_rate => 48000,track_id => <<"a1">>}]},
                   opened_at => 1631102868070,out_bandwidth => 1,
                   output_bitrate => 137,publish_enabled => false,
@@ -191,14 +191,14 @@ dataset() ->
                       #{title => <<"C03">>,
                         tracks =>
                             [#{bitrate => 83,codec => h264,content => video,
-                               fps => 24.0,height => 160,lang => <<"eng">>,
+                               fps => 24.0,height => 160,language => <<"eng">>,
                                last_gop => 48,level => <<"3.0">>,
                                pix_fmt => yuv420p,pixel_height => 160,
                                pixel_width => 240,profile => <<"Baseline">>,
                                sar_height => 1,sar_width => 1,
                                track_id => <<"v1">>,width => 240},
                              #{bitrate => 54,channels => 2,codec => aac,
-                               content => audio,lang => <<"eng">>,
+                               content => audio,language => <<"eng">>,
                                sample_rate => 48000,track_id => <<"a1">>}]},
                   opened_at => 1631102868074,out_bandwidth => 1,
                   output_bitrate => 137,publish_enabled => false,
@@ -284,14 +284,14 @@ dataset() ->
                       #{duration => 2.0e3,title => <<"C08">>,
                         tracks =>
                             [#{bitrate => 83,codec => h264,content => video,
-                               fps => 24.0,height => 160,lang => <<"eng">>,
+                               fps => 24.0,height => 160,language => <<"eng">>,
                                last_gop => 48,level => <<"3.0">>,
                                pix_fmt => yuv420p,pixel_height => 160,
                                pixel_width => 240,profile => <<"Baseline">>,
                                sar_height => 1,sar_width => 1,
                                track_id => <<"v1">>,width => 240},
                              #{bitrate => 54,channels => 2,codec => aac,
-                               content => audio,lang => <<"eng">>,
+                               content => audio,language => <<"eng">>,
                                sample_rate => 48000,track_id => <<"a1">>}]},
                   opened_at => 1631102874142,out_bandwidth => 0,
                   output_bitrate => 137,publish_enabled => false,
@@ -324,14 +324,14 @@ dataset() ->
                       #{duration => 2.0e3,title => <<"C09">>,
                         tracks =>
                             [#{bitrate => 83,codec => h264,content => video,
-                               fps => 24.0,height => 160,lang => <<"eng">>,
+                               fps => 24.0,height => 160,language => <<"eng">>,
                                last_gop => 48,level => <<"3.0">>,
                                pix_fmt => yuv420p,pixel_height => 160,
                                pixel_width => 240,profile => <<"Baseline">>,
                                sar_height => 1,sar_width => 1,
                                track_id => <<"v1">>,width => 240},
                              #{bitrate => 54,channels => 2,codec => aac,
-                               content => audio,lang => <<"eng">>,
+                               content => audio,language => <<"eng">>,
                                sample_rate => 48000,track_id => <<"a1">>}]},
                   opened_at => 1631102874649,out_bandwidth => 0,
                   output_bitrate => 137,publish_enabled => false,

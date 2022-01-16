@@ -4,6 +4,7 @@
 
 -export([routes/1, init/3, handle/2, terminate/3]).
 -export([load_schema/2]).
+-export([routes_sort/1]). % for tests
 
 
 routes(#{schema := SchemaPath, module := Module, name := Name, prefix := Prefix}) ->
@@ -38,21 +39,16 @@ routes(#{schema := SchemaPath, module := Module, name := Name, prefix := Prefix}
     persistent_term:put({openapi_handler_route,Name,CowboyPath}, PathSpec1#{name => Name, module => Module}),
     {<<Prefix/binary, CowboyPath/binary>>, ?MODULE, {Name,CowboyPath}}
   end, maps:to_list(Paths)),
-  lists:sort(fun path_sort/2, Routes).
+  % Нужно отсортировать так, чтобы символ ':', это противоречит стандартной сортировке
+  % поэтому отсоритируем как есть и развернем, тогда у нас ':' точно будет в ожидаемом месте
+  routes_sort(Routes).
+
+
+routes_sort(Routes) ->
+  lists:reverse(lists:sort(fun path_sort/2, Routes)).
 
 path_sort({Path1,_,_},{Path2,_,_}) ->
-  segment_sort(binary:split(Path1,<<"/">>,[global]), binary:split(Path2,<<"/">>,[global])).
-
-segment_sort([], [_]) -> false;  % Longest goes first
-segment_sort([_], []) -> true;
-segment_sort([Part|List1], [Part|List2]) -> segment_sort(List1, List2);
-segment_sort([], []) -> true; % This should not happen
-segment_sort([<<":",_/binary>>], [_]) -> false; % Direct match should go first
-segment_sort([_], [<<":",_/binary>>]) -> true; % Direct match should go first
-segment_sort(List1, List2) when length(List1) =/= length(List2) ->
-  length(List1) =< length(List2);
-segment_sort(List1, List2) ->
-  List1 =< List2.
+  Path1 =< Path2.
 
 
 
@@ -239,10 +235,29 @@ handle(Req, #{responses := Responses, name := Name, module := Module, ip := Ip} 
   {ok, Req2} = case Code2 of
     done -> {ok, PreparedResponse}; % HACK to bypass request here
     204 -> cowboy_req:reply(Code2, [], [], Req);
-    _ -> cowboy_req:reply(Code2, Headers, PreparedResponse, Req)
+    _ -> gzip_and_reply(Code2, Headers, PreparedResponse, Req)
   end,
   {ok, Req2, undefined}.
 
+
+gzip_and_reply(Code, Headers, Body, Req) when Code >= 200 andalso Code < 300->
+  {ok, AcceptEncoding,_Req2} = cowboy_req:parse_header(<<"accept-encoding">>, Req),
+  AcceptGzip = if is_list(AcceptEncoding) -> lists:keymember(<<"gzip">>, 1, AcceptEncoding);
+    true -> false
+  end,
+
+  Gzipping = AcceptGzip == true,
+  case Gzipping of
+    true ->
+      Body1 = zlib:gzip(Body),
+      Headers1 = [{<<"Content-Encoding">>,<<"gzip">>}|Headers],
+      cowboy_req:reply(Code, Headers1, Body1, Req);
+    false ->
+      cowboy_req:reply(Code, Headers, Body, Req)
+  end;
+
+gzip_and_reply(Code, Headers, Body, Req) ->
+  cowboy_req:reply(Code, Headers, Body, Req).
 
 
 fetch_ip_address(Req) ->
@@ -310,6 +325,8 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, acc
   try Module:OperationId(Args) of
     {error, enoent} ->
       {json, 404, #{error => not_found}};
+    {error, unavailable} ->
+      {json, 503, #{error => unavailable}};
     ok ->
       {json, 204, undefined};
     {json, Code, Response} ->
