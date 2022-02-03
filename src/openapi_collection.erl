@@ -105,6 +105,7 @@ parse_qs_api([{Key,Value}|Qs], Query, Opts) ->
     <<Key0:L2/binary, "_gte">> -> {Key0, #{'$gte' => Value}};
     <<Key0:L2/binary, "_lte">> -> {Key0, #{'$lte' => Value}};
     <<Key0:L3/binary, "_like">> -> {Key0, #{'$like' => Value}};
+    _ when Value == true -> {Key, [<<"true">>]};
     _ -> {Key, binary:split(Value,<<",">>,[global])}
   end,
   Key2 = binary:split(Key1, <<".">>, [global]),

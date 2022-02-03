@@ -10,6 +10,7 @@ all() ->
 
 groups() ->
   [{query, [], [ % parallel
+    param_no_value,
     filter_eq,
     filter_like,
     filter_gt,
@@ -39,6 +40,10 @@ qs(Proplist) ->
 q(Proplist) ->
   openapi_collection:list(dataset(), qs(Proplist)).
 
+
+param_no_value(_) ->
+  openapi_collection:parse_qs(<<"named_by&stats.media_info.title">>, #{limit => 100, collection_type => stream_config, schema_name => test_openapi}),
+  ok.
 
 filter_eq(_) ->
   #{estimated_count := 7} = q([{<<"named_by">>,<<"config">>}]),
