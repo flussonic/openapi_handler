@@ -321,8 +321,8 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, 'x-
       end
   end;
 
-handle_request(#{module := Module, operationId := OperationId, args := Args, accept := Accept}) ->
-  try Module:OperationId(Args) of
+handle_request(#{module := Module, operationId := OperationId, args := Args, accept := Accept, auth_context := AuthContext}) ->
+  try Module:OperationId(Args#{auth_context => AuthContext}) of
     {error, enoent} ->
       {json, 404, #{error => not_found}};
     {error, unavailable} ->
