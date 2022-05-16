@@ -64,6 +64,7 @@ call(#{schema := Schema, uri := URI}, OperationId, Args) ->
       case lhttpc:request(RequestURL, Method, RequestHeaders, RequestBody, 50000) of
         {ok, {{Code,_},ResponseHeaders,Bin}} when is_map_key(Code, Responses) ->
           ?LOG_DEBUG("< ~p\n~p\n~s", [Code, ResponseHeaders,Bin]),
+          check_cors_presence(ResponseHeaders),
           ResponseContentType = case proplists:get_value("Content-Type", ResponseHeaders) of
             undefined -> undefined;
             CT -> list_to_atom(CT)
@@ -88,16 +89,20 @@ call(#{schema := Schema, uri := URI}, OperationId, Args) ->
             404 -> {error, enoent};
             _ -> {error, {Code, Response1}}
           end;
-        {ok, {{404,_},_,Body}} ->
+        {ok, {{404,_},ResponseHeaders,Body}} ->
           ?LOG_INFO("~s ~s -> 404 ~p", [Method, uri_string:recompose(RequestURI), Body]),
+          check_cors_presence(ResponseHeaders),
           {error, enoent};
-        {ok, {{503,_},_,Body}} ->
+        {ok, {{503,_},ResponseHeaders,Body}} ->
           ?LOG_INFO("~s ~s -> 503 ~p", [Method, uri_string:recompose(RequestURI), Body]),
+          check_cors_presence(ResponseHeaders),
           {error, unavailable};
-        {ok, {{403,_},_,_}} ->
+        {ok, {{403,_},ResponseHeaders,_}} ->
           ?LOG_INFO("~s ~s -> 403", [Method, uri_string:recompose(RequestURI)]),
+          check_cors_presence(ResponseHeaders),
           {error, denied};
         {ok, {{Code,_},ResponseHeaders,Bin}} ->
+          check_cors_presence(ResponseHeaders),
           Response = case proplists:get_value("Content-Type", ResponseHeaders) of
             "application/json" -> try jsx:decode(Bin, [return_maps,{labels,atom}])
               catch _:_ -> Bin end;
@@ -189,8 +194,16 @@ substitute_args2(Parameters, URI, Query, Headers, Body, [{Key_,Value}|Args]) ->
   end.
 
 
-
-
 to_b(I) when is_integer(I) -> integer_to_binary(I);
 to_b(A) when is_atom(A) -> atom_to_binary(A);
 to_b(X) -> iolist_to_binary(X).
+
+
+check_cors_presence(Headers) ->
+  case proplists:get_value("Access-Control-Allow-Origin", Headers) of
+    "*" ->
+      true;
+    _Absent ->
+      error(no_cors_headers),
+      false
+  end.

@@ -234,7 +234,7 @@ handle(Req, #{responses := Responses, name := Name, module := Module, ip := Ip} 
   catch Module:log_call(Request#{code => Code, time => T3-T1, ip => Ip}),
   {ok, Req2} = case Code2 of
     done -> {ok, PreparedResponse}; % HACK to bypass request here
-    204 -> cowboy_req:reply(Code2, [], [], Req);
+    204 -> cowboy_req:reply(Code2, cors_headers(), [], Req);
     _ -> gzip_and_reply(Code2, Headers, PreparedResponse, Req)
   end,
   {ok, Req2, undefined}.
