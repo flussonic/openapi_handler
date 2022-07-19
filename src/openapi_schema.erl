@@ -77,6 +77,17 @@ encode3(#{anyOf := Choices}, Opts, Input, Path) ->
   Encoded = F(Choices, #{error => unmatched_anyOf, path => Path}),
   Encoded;
 
+encode3(#{const := Value}, #{auto_convert := Convert}, Input, Path) ->
+  case Input of
+    Value -> Input;
+    _ when is_atom(Input) andalso Convert == true -> 
+        case atom_to_binary(Input,latin1) of
+          Value -> Input;
+          _ -> {error, #{error => not_const, path => Path, input => Input}}
+        end;
+    _ -> {error, #{error => not_const, path => Path, input => Input}}
+  end;
+
 encode3(#{oneOf := Choices}, Opts, Input, Path) ->
   EncodedList = lists:map(fun({Choice,I}) ->
     case encode3(Choice, Opts, Input, Path ++ [I]) of
@@ -241,5 +252,4 @@ encode3(#{type := <<"boolean">>}, #{auto_convert := Convert}, Input, Path) ->
     <<"false">> when Convert -> false;
     _ -> {error, #{error => not_boolean, path => Path}}
   end.
-
 
