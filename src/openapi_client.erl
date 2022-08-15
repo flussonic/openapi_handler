@@ -2,7 +2,7 @@
 -include_lib("kernel/include/logger.hrl").
 
 
--export([load/1, call/3, store/2]).
+-export([load/1, call/3, call/4, store/2]).
 
 
 load(#{schema_url := URL} = State) ->
@@ -43,11 +43,14 @@ get_url(<<"http",_/binary>> = URL) ->
 store(Name, #{schema := _} = SchemaState) ->
   persistent_term:put({openapi,Name}, SchemaState#{schema_name => Name}).
 
+call(NameOrState, OperationId, Args) when is_atom(NameOrState); is_map(NameOrState) ->
+  call(NameOrState, OperationId, Args, _Opts = []).
 
-call(Name, OperationId, Args) when is_atom(Name) ->
-  call(persistent_term:get({openapi,Name}), OperationId, Args);
 
-call(#{schema := Schema, uri := URI}, OperationId, Args) ->
+call(Name, OperationId, Args, Opts) when is_atom(Name) ->
+  call(persistent_term:get({openapi,Name}), OperationId, Args, Opts);
+
+call(#{schema := Schema, uri := URI}, OperationId, Args, Opts) when is_list(Opts) ->
   case search_operation(OperationId, Schema) of
     undefined ->
       {error, no_such_operation};
@@ -61,7 +64,8 @@ call(#{schema := Schema, uri := URI}, OperationId, Args) ->
         #{raw_body := _} -> <<"raw_file_upload">>;
         _ -> RequestBody
       end]),
-      case lhttpc:request(RequestURL, Method, RequestHeaders, RequestBody, 50000) of
+      Timeout = proplists:get_value(timeout, Opts, 50000),
+      case lhttpc:request(RequestURL, Method, RequestHeaders, RequestBody, Timeout) of
         {ok, {{Code,_},ResponseHeaders,Bin}} when is_map_key(Code, Responses) ->
           ?LOG_DEBUG("< ~p\n~p\n~s", [Code, ResponseHeaders,Bin]),
           check_cors_presence(ResponseHeaders),
@@ -116,9 +120,9 @@ call(#{schema := Schema, uri := URI}, OperationId, Args) ->
   end;
 
 
-call(#{} = State, OperationId, Args) ->
+call(#{} = State, OperationId, Args, Opts) ->
   case load(State) of
-    #{} = State1 -> call(State1, OperationId, Args);
+    #{} = State1 -> call(State1, OperationId, Args, Opts);
     {error, E} -> {error, E}
   end.
 

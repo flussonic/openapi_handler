@@ -198,27 +198,27 @@ encode3(#{type := Scalar} = Schema, #{query := true} = Opts, [<<_/binary>>|_] = 
   end, [], Input);
 
 
-encode3(#{type := <<"integer">>}, #{auto_convert := Convert}, Input, Path) ->
+encode3(#{type := <<"integer">>} = Schema, #{auto_convert := Convert}, Input, Path) ->
   case Input of
-    _ when is_integer(Input) -> Input;
+    _ when is_integer(Input) -> encode_number(Schema, Input, Path);
     _ when is_binary(Input) andalso Convert == true ->
       case string:to_integer(Input) of
-        {IntValue, <<>>} -> IntValue;
+        {IntValue, <<>>} -> encode_number(Schema, IntValue, Path);
         _ -> {error, #{error => not_integer, path => Path, input => Input}}
       end;
     _ -> {error, #{error => not_integer, path => Path, input => Input}}
   end;
 
-encode3(#{type := <<"number">>}, #{auto_convert := Convert}, Input, Path) ->
+encode3(#{type := <<"number">>} = Schema, #{auto_convert := Convert}, Input, Path) ->
   case Input of
-    _ when is_integer(Input) orelse is_float(Input) -> Input;
+    _ when is_integer(Input) orelse is_float(Input) -> encode_number(Schema, Input, Path);
     _ when is_binary(Input) andalso Convert == true ->
       case string:to_integer(Input) of
         {IntValue, <<>>} ->
-          IntValue;
+          encode_number(Schema, IntValue, Path);
         _ ->
           case string:to_float(Input) of
-            {FloatValue,<<>>} -> FloatValue;
+            {FloatValue,<<>>} -> encode_number(Schema, FloatValue, Path);
             _ -> {error, #{error => not_integer, path => Path, input => Input}}
           end
       end;
@@ -253,3 +253,12 @@ encode3(#{type := <<"boolean">>}, #{auto_convert := Convert}, Input, Path) ->
     _ -> {error, #{error => not_boolean, path => Path}}
   end.
 
+
+encode_number(#{minimum := Min}, Input, Path) when Input < Min ->
+  {error, #{error => input_out_of_range, path => Path, input => Input, minimum => Min}};
+
+encode_number(#{maximum := Max}, Input, Path) when Input > Max ->
+  {error, #{error => input_out_of_range, path => Path, input => Input, maximum => Max}};
+
+encode_number(_Schema, Input, _Path) ->
+  Input.
