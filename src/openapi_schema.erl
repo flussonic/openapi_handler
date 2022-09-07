@@ -4,7 +4,17 @@
 -export([process/2]).
 
 
--define(IS_SCALAR(Scalar), (Scalar == <<"integer">> orelse Scalar == <<"number">> orelse Scalar == <<"string">> orelse Scalar == <<"boolean">>)).
+-define(IS_SCALAR_TYPE(Scalar), (
+  Scalar == <<"integer">> orelse
+  Scalar == <<"number">> orelse
+  Scalar == <<"string">> orelse
+  Scalar == <<"boolean">>
+)).
+
+-define(IS_SCALAR(Schema),(
+  (is_map_key(type,Schema) andalso ?IS_SCALAR_TYPE(map_get(type,Schema))) orelse
+  is_map_key(const,Schema)
+)).
 
 
 process(Input, #{} = Opts) ->
@@ -76,17 +86,6 @@ encode3(#{anyOf := Choices}, Opts, Input, Path) ->
   end,
   Encoded = F(Choices, #{error => unmatched_anyOf, path => Path}),
   Encoded;
-
-encode3(#{const := Value}, #{auto_convert := Convert}, Input, Path) ->
-  case Input of
-    Value -> Input;
-    _ when is_atom(Input) andalso Convert == true -> 
-        case atom_to_binary(Input,latin1) of
-          Value -> Input;
-          _ -> {error, #{error => not_const, path => Path, input => Input}}
-        end;
-    _ -> {error, #{error => not_const, path => Path, input => Input}}
-  end;
 
 encode3(#{oneOf := Choices}, Opts, Input, Path) ->
   EncodedList = lists:map(fun({Choice,I}) ->
@@ -169,7 +168,7 @@ encode3(#{type := <<"array">>, items := _ItemSpec}, _Opts, Input, Path) when not
 encode3(#{type := <<"string">>}, #{query := true}, #{} = Input, _Path) ->
   Input;
 
-encode3(#{type := Scalar} = Schema, #{query := true} = Opts, #{} = Input, Path) when ?IS_SCALAR(Scalar) ->
+encode3(#{} = Schema, #{query := true} = Opts, #{} = Input, Path) when ?IS_SCALAR(Schema) ->
   Encoded = lists:foldl(fun
     (_,{error,E}) ->
       {error,E};
@@ -186,7 +185,7 @@ encode3(#{type := Scalar} = Schema, #{query := true} = Opts, #{} = Input, Path) 
     _ -> maps:from_list(Encoded)
   end;
 
-encode3(#{type := Scalar} = Schema, #{query := true} = Opts, [<<_/binary>>|_] = Input, Path) when ?IS_SCALAR(Scalar) ->
+encode3(#{} = Schema, #{query := true} = Opts, [<<_/binary>>|_] = Input, Path) when ?IS_SCALAR(Schema) ->
   lists:foldl(fun
     (_, {error, E}) ->
       {error, E};
@@ -223,6 +222,20 @@ encode3(#{type := <<"number">>} = Schema, #{auto_convert := Convert}, Input, Pat
           end
       end;
     _ -> {error, #{error => not_number, path => Path, input => Input}}
+  end;
+
+encode3(#{const := Value}, #{auto_convert := Convert}, Input, Path) when is_atom(Input) orelse is_binary(Input) ->
+  case Input of
+    <<Value/binary>> when Convert ->
+      binary_to_atom(Value,latin1);
+    Value ->
+      Input;
+    _ when is_atom(Input) andalso Convert == true -> 
+        case atom_to_binary(Input,latin1) of
+          Value -> Input;
+          _ -> {error, #{error => not_const1, path => Path, input => Input}}
+        end;
+    _ -> {error, #{error => not_const2, path => Path, input => Input, value => Value}}
   end;
 
 encode3(#{enum := Choices, type := <<"string">>}, #{auto_convert := Convert}, Input, Path) ->

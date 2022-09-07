@@ -51,7 +51,7 @@ filter_eq(_) ->
   ok.
 
 filter_like(_) ->
-  #{items := [#{name := <<"c/08">>},#{name := <<"c/09">>}]} = q([{<<"named_by_like">>,<<"remo">>}]),
+  #{items := [#{name := <<"c/08">>},#{name := <<"c/09">>}]} = q([{<<"named_by_like">>,<<"remote">>}]),
   #{items := [#{name := <<"c/03">>}]} = q([{<<"stats.media_info.title_like">>,<<"C03">>}]),
   ok.
 
