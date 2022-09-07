@@ -10,6 +10,8 @@ all() ->
 
 groups() ->
   [{query, [], [ % parallel
+    read_default,
+
     param_no_value,
     filter_eq,
     filter_like,
@@ -39,6 +41,17 @@ qs(Proplist) ->
 
 q(Proplist) ->
   openapi_collection:list(dataset(), qs(Proplist)).
+
+
+read_default(_) ->
+  Json = #{<<"name">> => <<"read_default">>},
+  Schema = persistent_term:get({openapi_handler_schema,test_openapi}),
+  #{static := true, name := <<"read_default">>} = 
+    openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true}),
+
+  Stream2 = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema}),
+  Stream2 = #{name => <<"read_default">>},
+  ok.
 
 
 param_no_value(_) ->

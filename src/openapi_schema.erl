@@ -25,6 +25,7 @@ process(Input, #{} = Opts) ->
     (name,_) -> ok;
     (auto_convert,Flag) when Flag == true; Flag == false -> ok;
     (query,Flag) when Flag == true; Flag == false -> ok;
+    (apply_defaults,Flag) when Flag == true; Flag == false -> ok;
     (K,V) -> error({unknown_option,K,V})
   end, Opts),
   Schema = case Opts of
@@ -126,6 +127,11 @@ encode3(#{type := <<"object">>, properties := Properties}, #{query := Query} = O
         _ ->
           error(#{input => Input, field => Field, prop => Prop, obj => Obj, path => Path})
       end,
+      ApplyDefaults = maps:get(apply_defaults, Opts, false),
+      Default = case Prop of
+        #{default := DefaultValue} when ApplyDefaults -> #{Field => DefaultValue};
+        _ -> #{}
+      end,
 
       UpdatedObj = case ExtractedValue of
         {ok, NullFlag} when Query andalso (NullFlag == null orelse NullFlag == not_null) ->
@@ -140,7 +146,7 @@ encode3(#{type := <<"object">>, properties := Properties}, #{query := Query} = O
               Obj#{Field => Value1}
           end;
         undefined ->
-          Obj
+          maps:merge(Default,Obj)
       end,
       UpdatedObj
   end, #{}, maps:merge(Artificial,Properties)),
