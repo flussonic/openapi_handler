@@ -59,12 +59,12 @@ param_no_value(_) ->
   ok.
 
 filter_eq(_) ->
-  #{estimated_count := 7} = q([{<<"named_by">>,<<"config">>}]),
+  % #{estimated_count := 7} = q([{<<"named_by">>,<<"config">>}]),
   #{estimated_count := 1} = q([{<<"stats.media_info.title">>,<<"C03">>}]),
   ok.
 
 filter_like(_) ->
-  #{items := [#{name := <<"c/08">>},#{name := <<"c/09">>}]} = q([{<<"named_by_like">>,<<"remote">>}]),
+  % #{items := [#{name := <<"c/08">>},#{name := <<"c/09">>}]} = q([{<<"named_by_like">>,<<"remote">>}]),
   #{items := [#{name := <<"c/03">>}]} = q([{<<"stats.media_info.title_like">>,<<"C03">>}]),
   ok.
 
