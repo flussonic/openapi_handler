@@ -1,6 +1,6 @@
 {application, openapi_handler,
  [{description, "OpenAPI 3.0 Cowboy handler"},
-  {vsn, "22.1.1"}, % Year 22, January. Sorry, but semver is a bullshit
+  {vsn, "22.9.0"}, % Year 22, January. Sorry, but semver is a bullshit
   {registered, []},
   {applications,
    [kernel,
