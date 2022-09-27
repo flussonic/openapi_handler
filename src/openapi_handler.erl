@@ -7,6 +7,7 @@
 -export([routes_sort/1]). % for tests
 
 
+
 routes(#{schema := SchemaPath, module := Module, name := Name, prefix := Prefix}) ->
   #{} = Schema = load_schema(SchemaPath, Name),
 
@@ -14,25 +15,9 @@ routes(#{schema := SchemaPath, module := Module, name := Name, prefix := Prefix}
   Routes = lists:map(fun({Path,PathSpec}) ->
     <<"/", _/binary>> = CowboyPath = re:replace(atom_to_list(Path), "{([^\\}]+)}", ":\\1",[global,{return,binary}]),
     Parameters = maps:get(parameters, PathSpec, []),
-    PathSpec1 = maps:map(fun(_M,#{operationId := OperationId_} = Operation) ->
-      Op1 = maps:remove(description,Operation),
-      OperationId = binary_to_atom(OperationId_,latin1),
-      Params1 = Parameters ++ maps:get(parameters, Op1, []),
-      Op2 = Op1#{operationId => OperationId, parameters => Params1},
-      Op3 = case Op2 of
-        #{'x-collection-name' := CollectionName, 'x-collection-type' := CollectionType} ->
-          Op2#{
-            'x-collection-name' => binary_to_atom(CollectionName,latin1),
-            'x-collection-type' := binary_to_atom(CollectionType,latin1)
-          };
-        #{} ->
-          Op2
-      end,
-      Responses = [{list_to_integer(atom_to_list(Code)),maps:remove(description,CodeSpec)} || 
-        {Code,CodeSpec} <-
-        maps:to_list(maps:get(responses, Operation))],
-      Op3#{responses => maps:from_list(Responses)}
-    end, maps:remove(parameters,PathSpec)),
+    PathSpec1 = maps:filtermap(
+      fun(Method, Operation) -> prepare_operation_fm(Method, Operation, Parameters) end,
+      maps:remove(parameters,PathSpec)),
 
     % It is too bad to pass all this stuff through cowboy options because it starts suffering
     % from GC on big state. Either ETS, either persistent_term, either compilation of custom code
@@ -44,6 +29,29 @@ routes(#{schema := SchemaPath, module := Module, name := Name, prefix := Prefix}
   routes_sort(Routes).
 
 
+prepare_operation_fm(_M, #{operationId := OperationId_} = Operation, Parameters) ->
+  Op1 = maps:remove(description,Operation),
+  OperationId = binary_to_atom(OperationId_,latin1),
+  Params1 = Parameters ++ maps:get(parameters, Op1, []),
+  Op2 = Op1#{operationId => OperationId, parameters => Params1},
+  Op3 = case Op2 of
+    #{'x-collection-name' := CollectionName, 'x-collection-type' := CollectionType} ->
+      Op2#{
+        'x-collection-name' => binary_to_atom(CollectionName,latin1),
+        'x-collection-type' := binary_to_atom(CollectionType,latin1)
+      };
+    #{} ->
+      Op2
+  end,
+  Responses0 = maps:to_list(maps:get(responses, Operation, #{})),
+  Responses = [{list_to_integer(atom_to_list(Code)),maps:remove(description,CodeSpec)} || 
+    {Code,CodeSpec} <- Responses0,
+    Code /= default],
+  {true, Op3#{responses => maps:from_list(Responses)}};
+prepare_operation_fm(_, #{}, _) ->
+  % Skip operations with no operationId
+  false.
+
 routes_sort(Routes) ->
   lists:reverse(lists:sort(fun path_sort/2, Routes)).
 
@@ -52,7 +60,8 @@ path_sort({Path1,_,_},{Path2,_,_}) ->
 
 
 
-load_schema(#{components := #{schemas := Schemas}} = Schema, Name) ->
+load_schema(#{} = Schema, Name) ->
+  #{components := #{schemas := Schemas}} = Schema,
   [persistent_term:put({openapi_handler_schema,Name,atom_to_binary(Type,latin1)}, TypeSchema) ||
     {Type,TypeSchema} <- maps:to_list(Schemas)],
   persistent_term:put({openapi_handler_schema,Name},Schema),
@@ -60,8 +69,29 @@ load_schema(#{components := #{schemas := Schemas}} = Schema, Name) ->
 
 load_schema(SchemaPath, Name) when is_list(SchemaPath) orelse is_binary(SchemaPath) ->
   {ok, Bin} = file:read_file(SchemaPath),
-  load_schema(jsx:decode(Bin,[return_maps,{labels,atom}]), Name).
+  Format = case filename:extension(iolist_to_binary(SchemaPath)) of
+    <<".yaml">> -> yaml;
+    <<".yml">> -> yaml;
+    <<".json">> -> json;
+    _ -> json
+  end,
+  DecodedSchema = case Format of
+    json ->
+      jsx:decode(Bin,[return_maps,{labels,atom}]);
+    yaml ->
+      application:ensure_all_started(yamerl),
+      [Decoded0] = yamerl:decode(Bin, [{erlang_atom_autodetection, false}, {map_node_format, map}, {str_node_as_binary, true}]),
+      map_keys_to_atom(Decoded0)
+  end,
+  load_schema(DecodedSchema, Name).
 
+%% yamerl lacks an option to make all map keys atom, but keep values binary. So, we need this converter.
+map_keys_to_atom(#{} = Map) ->
+  maps:fold(fun(K, V, Acc) -> Acc#{binary_to_atom(K, utf8) => map_keys_to_atom(V)} end, #{}, Map);
+map_keys_to_atom(List) when is_list(List) ->
+  [map_keys_to_atom(E) || E <- List];
+map_keys_to_atom(Value) ->
+  Value.
 
 
 
