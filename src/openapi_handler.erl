@@ -132,6 +132,7 @@ init(_, Req, {Name, CowboyPath}) ->
         #{} ->
           Accept = case cowboy_req:header(<<"accept">>, Req3, <<"application/json">>) of
             {<<"text/plain",_/binary>>,_} -> text;
+            {<<"text/csv",_/binary>>,_} -> csv;
             {_,_} -> json
           end,
           {Ip,_} = fetch_ip_address(Req),
@@ -318,7 +319,9 @@ cors_headers() ->
   {<<"Access-Control-Allow-Headers">>, <<"*">>}].
 
 
-handle_request(#{module := Module, operationId := OperationId, args := Args, 'x-collection-name' := CollectionName} = OpenAPI) ->
+handle_request(#{module := Module, operationId := OperationId, args := Args, auth_context := AuthContext,
+  'x-collection-name' := CollectionName} = OpenAPI) ->
+
   #{raw_qs := Qs} = Args,
   Type = maps:get('x-collection-type', OpenAPI),
   Name = maps:get(name, OpenAPI),
@@ -328,7 +331,7 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, 'x-
     #{} = RawQuery ->
       Query = maps:merge(Args, RawQuery),
       T1 = minute:now_ms(),
-      try Module:OperationId(Query) of
+      try Module:OperationId(Query#{auth_context => AuthContext}) of
         {json, Code, Response} ->
           {json, Code, Response};
         #{CollectionName := FullList} when is_list(FullList) ->
@@ -354,6 +357,8 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, 'x-
 
 handle_request(#{module := Module, operationId := OperationId, args := Args, accept := Accept, auth_context := AuthContext, ip := Ip}) ->
   try Module:OperationId(Args#{auth_context => AuthContext, agent_ip => Ip}) of
+    {error, badrequest} ->
+      {json, 400, #{error => bad_request}};
     {error, enoent} ->
       {json, 404, #{error => not_found}};
     {error, unavailable} ->
@@ -364,7 +369,7 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, acc
       {json, Code, Response};
     #{} = Response ->
       {json, 200, Response};
-    <<_/binary>> = Response when Accept == text ->
+    <<_/binary>> = Response when Accept == text; Accept == csv ->
       {text, 200, Response};
     {done, Req} ->
       {done, Req};
