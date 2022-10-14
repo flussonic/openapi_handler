@@ -132,6 +132,7 @@ init(_, Req, {Name, CowboyPath}) ->
         #{} ->
           Accept = case cowboy_req:header(<<"accept">>, Req3, <<"application/json">>) of
             {<<"text/plain",_/binary>>,_} -> text;
+            {<<"text/csv",_/binary>>,_} -> csv;
             {_,_} -> json
           end,
           {Ip,_} = fetch_ip_address(Req),
@@ -368,7 +369,7 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, acc
       {json, Code, Response};
     #{} = Response ->
       {json, 200, Response};
-    <<_/binary>> = Response when Accept == text ->
+    <<_/binary>> = Response when Accept == text; Accept == csv ->
       {text, 200, Response};
     {done, Req} ->
       {done, Req};
