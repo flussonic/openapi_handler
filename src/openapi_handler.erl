@@ -318,7 +318,9 @@ cors_headers() ->
   {<<"Access-Control-Allow-Headers">>, <<"*">>}].
 
 
-handle_request(#{module := Module, operationId := OperationId, args := Args, 'x-collection-name' := CollectionName} = OpenAPI) ->
+handle_request(#{module := Module, operationId := OperationId, args := Args, auth_context := AuthContext,
+  'x-collection-name' := CollectionName} = OpenAPI) ->
+
   #{raw_qs := Qs} = Args,
   Type = maps:get('x-collection-type', OpenAPI),
   Name = maps:get(name, OpenAPI),
@@ -328,7 +330,7 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, 'x-
     #{} = RawQuery ->
       Query = maps:merge(Args, RawQuery),
       T1 = minute:now_ms(),
-      try Module:OperationId(Query) of
+      try Module:OperationId(Query#{auth_context => AuthContext}) of
         {json, Code, Response} ->
           {json, Code, Response};
         #{CollectionName := FullList} when is_list(FullList) ->
