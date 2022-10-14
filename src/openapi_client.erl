@@ -180,6 +180,9 @@ substitute_args2(Parameters, URI, Query, Headers, Body, [{originator,Value}|Args
 substitute_args2(Parameters, URI, Query, Headers, Body, [{authorization,Value}|Args]) ->
   substitute_args2(Parameters, URI, Query, Headers++[{"Authorization",Value}], Body, Args);
 
+substitute_args2(Parameters, URI, Query, Headers, Body, [{accept,Value}|Args]) ->
+  substitute_args2(Parameters, URI, Query, Headers++[{"Accept",Value}], Body, Args);
+
 substitute_args2(Parameters, URI, Query, Headers, Body, [{Key_,Value}|Args]) ->
   Key = atom_to_binary(Key_,latin1),
   case lists2:mapfind(Key, name, Parameters) of
