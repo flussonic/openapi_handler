@@ -356,6 +356,8 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, aut
 
 handle_request(#{module := Module, operationId := OperationId, args := Args, accept := Accept, auth_context := AuthContext, ip := Ip}) ->
   try Module:OperationId(Args#{auth_context => AuthContext, agent_ip => Ip}) of
+    {error, badrequest} ->
+      {json, 400, #{error => bad_request}};
     {error, enoent} ->
       {json, 404, #{error => not_found}};
     {error, unavailable} ->
