@@ -4,7 +4,7 @@
 -export([parse_qs/2]).
 -export([qs/1]).
 -export([list/2]).
--export([calculate_cursors/5]).
+-export([calculate_cursors/5, unwrap_kv/1]).
 
 
 
