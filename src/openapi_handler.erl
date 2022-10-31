@@ -2,14 +2,17 @@
 -include_lib("kernel/include/logger.hrl").
 
 
--export([routes/1, init/3, handle/2, terminate/3]).
--export([load_schema/2]).
+-export([init/2, handle/2, terminate/3]).
+-export([routes/1, load_schema/2, choose_module/0]).
 -export([routes_sort/1]). % for tests
 
+% For compatibility with legacy Cowboy. Called by openapi_handler_legacy.
+-export([do_init/5, do_handle/3]).
 
 
 routes(#{schema := SchemaPath, module := Module, name := Name, prefix := Prefix}) ->
   #{} = Schema = load_schema(SchemaPath, Name),
+  HandlerModule = choose_module(),
 
   #{paths := Paths} = Schema,
   Routes = lists:map(fun({Path,PathSpec}) ->
@@ -22,11 +25,22 @@ routes(#{schema := SchemaPath, module := Module, name := Name, prefix := Prefix}
     % It is too bad to pass all this stuff through cowboy options because it starts suffering
     % from GC on big state. Either ETS, either persistent_term, either compilation of custom code
     persistent_term:put({openapi_handler_route,Name,CowboyPath}, PathSpec1#{name => Name, module => Module}),
-    {<<Prefix/binary, CowboyPath/binary>>, ?MODULE, {Name,CowboyPath}}
+    {<<Prefix/binary, CowboyPath/binary>>, HandlerModule, {Name,CowboyPath}}
   end, maps:to_list(Paths)),
   % Нужно отсортировать так, чтобы символ ':', это противоречит стандартной сортировке
   % поэтому отсоритируем как есть и развернем, тогда у нас ':' точно будет в ожидаемом месте
   routes_sort(Routes).
+
+choose_module() ->
+  try
+    % Check if cowboy uses modern Req (map)
+    1234 = cowboy_req:port(#{port => 1234}),
+    ?MODULE
+  catch
+    error:{badrecord,_}:_ ->
+      % cowboy uses record for Req, use legacy wrapper
+      openapi_handler_legacy
+  end.
 
 
 prepare_operation_fm(_M, #{operationId := OperationId_} = Operation, Parameters) ->
@@ -44,7 +58,7 @@ prepare_operation_fm(_M, #{operationId := OperationId_} = Operation, Parameters)
       Op2
   end,
   Responses0 = maps:to_list(maps:get(responses, Operation, #{})),
-  Responses = [{list_to_integer(atom_to_list(Code)),maps:remove(description,CodeSpec)} || 
+  Responses = [{list_to_integer(atom_to_list(Code)),maps:remove(description,CodeSpec)} ||
     {Code,CodeSpec} <- Responses0,
     Code /= default],
   {true, Op3#{responses => maps:from_list(Responses)}};
@@ -98,9 +112,12 @@ map_keys_to_atom(Value) ->
 
 
 
-init(_, Req, {Name, CowboyPath}) ->
+init(Req, {Name, CowboyPath}) ->
+  do_init(Req, Name, CowboyPath, cowboy_req, #{}).
+
+do_init(Req, Name, CowboyPath, Mod_cowboy_req, Compat) ->
   #{module := Module, name := Name} = Spec = persistent_term:get({openapi_handler_route, Name, CowboyPath}),
-  {Method_, Req2} = cowboy_req:method(Req),
+  Method_ = Mod_cowboy_req:method(Req),
   Method = case Method_ of
     <<"POST">> -> post;
     <<"GET">> -> get;
@@ -110,32 +127,36 @@ init(_, Req, {Name, CowboyPath}) ->
     _ -> undefined
   end,
   Operation = maps:get(Method, Spec, undefined),
-  {Originator, _} = cowboy_req:header(<<"x-originator">>, Req),
-  {Authorization, _} = cowboy_req:header(<<"authorization">>, Req),
+  Originator = Mod_cowboy_req:header(<<"x-originator">>, Req),
+  Authorization = Mod_cowboy_req:header(<<"authorization">>, Req),
+
+  % For compatibility with legacy Cowboy
+  _ok = maps:get(ok, Compat, ok),
+
   case Operation of
     undefined when Method == options ->
-      {ok, Req3} = cowboy_req:reply(200, cors_headers(), <<>>, Req2),
-      {shutdown, Req3, undefined};
+      Req3 = Mod_cowboy_req:reply(200, cors_headers(), <<>>, Req),
+      {_ok, Req3, undefined};
     undefined ->
-      {ok, Req3} = cowboy_req:reply(405, 
+      Req3 = Mod_cowboy_req:reply(405,
         json_headers(),
-        [jsx:encode(#{error => <<"unknown_operation">>}),"\n"], Req2),
-      {shutdown, Req3, undefined};
+        [jsx:encode(#{error => <<"unknown_operation">>}),"\n"], Req),
+      {_ok, Req3, undefined};
     #{} ->
-      {Args, Req3} = collect_parameters(Operation, Req2, Name),
+      {Args, Req3} = collect_parameters(Operation, Req, Name, Mod_cowboy_req),
       case Args of
         {error, E} ->
-          {ok, Req4} = cowboy_req:reply(400, 
+          Req4 = Mod_cowboy_req:reply(400,
             json_headers(),
             [jsx:encode(E#{while => parsing_parameters}),"\n"], Req3),
-          {shutdown, Req4, undefined};
+          {_ok, Req4, undefined};
         #{} ->
-          Accept = case cowboy_req:header(<<"accept">>, Req3, <<"application/json">>) of
-            {<<"text/plain",_/binary>>,_} -> text;
-            {<<"text/csv",_/binary>>,_} -> csv;
-            {_,_} -> json
+          Accept = case Mod_cowboy_req:header(<<"accept">>, Req3, <<"application/json">>) of
+            <<"text/plain",_/binary>> -> text;
+            <<"text/csv",_/binary>> -> csv;
+            _ -> json
           end,
-          {Ip,_} = fetch_ip_address(Req),
+          Ip = fetch_ip_address(Req, Mod_cowboy_req),
           Operation1 = Operation#{
             module => Module,
             args => Args,
@@ -149,19 +170,19 @@ init(_, Req, {Name, CowboyPath}) ->
             #{} = AuthContext ->
               {ok, Req3, Operation1#{auth_context => AuthContext}};
             {error, denied} ->
-              {ok, Req4} = cowboy_req:reply(403, json_headers(), [jsx:encode(#{error => authorization_failed}),"\n"], Req3),
-              {shutdown, Req4, undefined}
+              Req4 = Mod_cowboy_req:reply(403, json_headers(), [jsx:encode(#{error => authorization_failed}),"\n"], Req3),
+              {_ok, Req4, undefined}
           end
       end
   end.
 
 
-collect_parameters(#{parameters := Parameters} = Spec, Req, ApiName) ->
-  {Qs, Req1} = cowboy_req:qs(Req),
-  {QsVals, Req2} = cowboy_req:qs_vals(Req1),
-  {Bindings, Req3} = cowboy_req:bindings(Req2),
-  {Headers, _} = cowboy_req:headers(Req3),
-  ContentType = case proplists:get_value(<<"content-type">>, Headers) of
+collect_parameters(#{parameters := Parameters} = Spec, Req, ApiName, Mod_cowboy_req) ->
+  Qs = Mod_cowboy_req:qs(Req),
+  QsVals = Mod_cowboy_req:parse_qs(Req),
+  Bindings = Mod_cowboy_req:bindings(Req),
+  Headers = Mod_cowboy_req:headers(Req),
+  ContentType = case maps:get(<<"content-type">>, Headers, undefined) of
     <<"application/json",_/binary>> -> 'application/json';
     <<"text/json",_/binary>> -> 'application/json';
     <<"text/plain",_/binary>> -> 'text/plain';
@@ -182,9 +203,9 @@ collect_parameters(#{parameters := Parameters} = Spec, Req, ApiName) ->
           binary_to_atom(Name,latin1) % It is OK here to make binary_to_atom
       end,
       Value1 = case In of
-        <<"path">> -> proplists:get_value(Key, Bindings);
+        <<"path">> -> maps:get(Key, Bindings, undefined);
         <<"query">> -> proplists:get_value(Name, QsVals);
-        <<"header">> -> proplists:get_value(cowboy_bstr:to_lower(Name), Headers)
+        <<"header">> -> maps:get(cowboy_bstr:to_lower(Name), Headers, undefined)
       end,
       Value2 = case Schema of
         #{default := Default} when Value1 == undefined -> Default;
@@ -207,12 +228,12 @@ collect_parameters(#{parameters := Parameters} = Spec, Req, ApiName) ->
 
   case Args of
     {error, _} ->
-      {Args, Req3};
+      {Args, Req};
     #{} ->
       case Spec of
         #{requestBody := #{content := #{'application/json' := #{schema := BodySchema}}}} when
           ContentType == 'application/json' ->
-          {ok, TextBody, Req4} = cowboy_req:body(Req3),
+          {ok, TextBody, Req4} = Mod_cowboy_req:read_body(Req),
           case TextBody of
             <<>> ->
               {Args, Req4};
@@ -224,24 +245,27 @@ collect_parameters(#{parameters := Parameters} = Spec, Req, ApiName) ->
                 Value1 ->
                   Args1 = Args#{json_body => Value1},
                   {Args1, Req4}
-              end              
+              end
           end;
         #{requestBody := #{content := #{'text/plain' := #{schema := #{type := <<"string">>}}}}} when
           ContentType == 'text/plain' ->
-          {ok, TextBody, Req4} = cowboy_req:body(Req3),
+          {ok, TextBody, Req4} = Mod_cowboy_req:read_body(Req),
           Args1 = Args#{raw_body => TextBody},
-          {Args1, Req4};          
+          {Args1, Req4};
         #{requestBody := #{content := #{'*/*' := #{schema := #{format := <<"binary">>}}}}} ->
-          Args1 = Args#{req => Req3},
-          {Args1, Req3};          
+          Args1 = Args#{req => Req},
+          {Args1, Req};
         #{} ->
-          {Args, Req3}
+          {Args, Req}
       end
   end.
-  
 
 
-handle(Req, #{responses := Responses, name := Name, module := Module, ip := Ip} = Request) ->
+
+handle(Req, #{} = Request) ->
+  do_handle(Req, #{} = Request, cowboy_req).
+
+do_handle(Req, #{responses := Responses, name := Name, module := Module, ip := Ip} = Request, Mod_cowboy_req) ->
   T1 = erlang:system_time(micro_seconds),
   {ContentType, Code, Response} = handle_request(Request),
   % T2 = erlang:system_time(micro_seconds),
@@ -254,8 +278,8 @@ handle(Req, #{responses := Responses, name := Name, module := Module, ip := Ip} 
           Postprocessed = Module:postprocess(EncodedJson, Request),
           {Code, json_headers(), [jsx:encode(Postprocessed),"\n"]}
       end;
-    #{} when is_binary(Response) andalso ContentType == text ->
-      {Code, text_headers(), Response};
+    #{} when is_binary(Response) andalso (ContentType == text orelse ContentType == csv) ->
+      {Code, text_headers(ContentType), Response};
     #{} ->
       {Code, json_headers(), [jsx:encode(Response),"\n"]};
     {done, Req1} ->
@@ -264,59 +288,64 @@ handle(Req, #{responses := Responses, name := Name, module := Module, ip := Ip} 
   T3 = erlang:system_time(micro_seconds),
 
   catch Module:log_call(Request#{code => Code, time => T3-T1, ip => Ip}),
-  {ok, Req2} = case Code2 of
-    done -> {ok, PreparedResponse}; % HACK to bypass request here
-    204 -> cowboy_req:reply(Code2, cors_headers(), [], Req);
-    _ -> gzip_and_reply(Code2, Headers, PreparedResponse, Req)
+  Req2 = case Code2 of
+    done -> PreparedResponse; % HACK to bypass request here
+    204 -> Mod_cowboy_req:reply(Code2, cors_headers(), [], Req);
+    _ -> gzip_and_reply(Code2, Headers, PreparedResponse, Req, Mod_cowboy_req)
   end,
   {ok, Req2, undefined}.
 
 
-gzip_and_reply(Code, Headers, Body, Req) when Code >= 200 andalso Code < 300->
-  {ok, AcceptEncoding,_Req2} = cowboy_req:parse_header(<<"accept-encoding">>, Req),
+gzip_and_reply(Code, Headers, Body, Req, Mod_cowboy_req) when Code >= 200 andalso Code < 300->
+  AcceptEncoding = Mod_cowboy_req:parse_header(<<"accept-encoding">>, Req),
   AcceptGzip = if is_list(AcceptEncoding) -> lists:keymember(<<"gzip">>, 1, AcceptEncoding);
     true -> false
   end,
 
   Gzipping = AcceptGzip == true,
   case Gzipping of
-    true ->
+    true when is_map(Headers) ->
       Body1 = zlib:gzip(Body),
-      Headers1 = [{<<"Content-Encoding">>,<<"gzip">>}|Headers],
-      cowboy_req:reply(Code, Headers1, Body1, Req);
+      Headers1 = Headers#{<<"Content-Encoding">> => <<"gzip">>},
+      Mod_cowboy_req:reply(Code, Headers1, Body1, Req);
     false ->
-      cowboy_req:reply(Code, Headers, Body, Req)
+      Mod_cowboy_req:reply(Code, Headers, Body, Req)
   end;
 
-gzip_and_reply(Code, Headers, Body, Req) ->
-  cowboy_req:reply(Code, Headers, Body, Req).
+gzip_and_reply(Code, Headers, Body, Req, Mod_cowboy_req) ->
+  Mod_cowboy_req:reply(Code, Headers, Body, Req).
 
 
-fetch_ip_address(Req) ->
-  case cowboy_req:header(<<"x-real-ip">>, Req) of
-    {Ip, Req1} when is_binary(Ip) -> {Ip, Req1};
+fetch_ip_address(Req, Mod_cowboy_req) ->
+  case Mod_cowboy_req:header(<<"x-real-ip">>, Req) of
+    Ip when is_binary(Ip) -> Ip;
     _ ->
-      case cowboy_req:header(<<"cf-connecting-ip">>, Req) of
-        {Ip,Req1} when is_binary(Ip) -> {Ip, Req1};
+      case Mod_cowboy_req:header(<<"cf-connecting-ip">>, Req) of
+        Ip when is_binary(Ip) -> Ip;
         _ ->
-          {{PeerAddr,_}, Req1} = cowboy_req:peer(Req),
+          {PeerAddr,_} = Mod_cowboy_req:peer(Req),
           Ip = list_to_binary(inet_parse:ntoa(PeerAddr)),
-          {Ip, Req1}
+          Ip
       end
   end.
 
 
 json_headers() ->
-  [{<<"Content-Type">>,<<"application/json">>}] ++ cors_headers().
+  (cors_headers())#{<<"Content-Type">> => <<"application/json">>}.
 
-text_headers() ->
-  [{<<"Content-Type">>,<<"text/plain">>}] ++ cors_headers().
+text_headers(text) ->
+  (cors_headers())#{<<"Content-Type">> => <<"text/plain">>};
+text_headers(csv) ->
+  (cors_headers())#{<<"Content-Type">> => <<"text/csv">>}.
+
 
 cors_headers() ->
-  [{<<"Access-Control-Allow-Origin">>, <<"*">>},
-  {<<"Access-Control-Allow-Methods">>, <<"GET, PUT, DELETE, OPTIONS">>},
-  {<<"Access-Control-Expose-Headers">>, <<"*">>},
-  {<<"Access-Control-Allow-Headers">>, <<"*">>}].
+  #{<<"Access-Control-Allow-Origin">> => <<"*">>,
+    <<"Access-Control-Allow-Methods">> => <<"GET, PUT, DELETE, OPTIONS">>,
+    <<"Access-Control-Expose-Headers">> => <<"*">>,
+    <<"Access-Control-Allow-Headers">> => <<"*">>,
+    <<"Access-Control-Allow-Private-Network">> => <<"true">>
+  }.
 
 
 handle_request(#{module := Module, operationId := OperationId, args := Args, auth_context := AuthContext,
@@ -329,13 +358,18 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, aut
     {error, E} ->
       {json, 400, E#{while => parsing_query}};
     #{} = RawQuery ->
-      Query = maps:merge(Args, RawQuery),
-      T1 = minute:now_ms(),
-      try Module:OperationId(Query#{auth_context => AuthContext}) of
+      Args1 = Args#{
+        auth_context => AuthContext,
+        collection_type => Type,
+        schema_name => Name
+      },
+      Query = maps:merge(Args1, RawQuery),
+      T1 = erlang:system_time(milli_seconds),
+      try Module:OperationId(Query) of
         {json, Code, Response} ->
           {json, Code, Response};
         #{CollectionName := FullList} when is_list(FullList) ->
-          T2 = minute:now_ms(),
+          T2 = erlang:system_time(milli_seconds),
           R = openapi_collection:list(FullList, Query#{timing => #{load => T2-T1}, collection => CollectionName}),
           {json, 200, R}
       catch
@@ -370,7 +404,7 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, acc
     #{} = Response ->
       {json, 200, Response};
     <<_/binary>> = Response when Accept == text; Accept == csv ->
-      {text, 200, Response};
+      {Accept, 200, Response};
     {done, Req} ->
       {done, Req};
     Else ->

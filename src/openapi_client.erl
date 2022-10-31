@@ -9,7 +9,7 @@ load(#{schema_url := URL} = State) ->
   case get_url(iolist_to_binary(URL)) of
     {ok, Bin} ->
       Schema = jsx:decode(Bin, [return_maps,{labels,atom}]),
-      #{servers := [#{url := BaseURL}]} = Schema,
+      #{servers := [#{url := BaseURL}|_]} = Schema,
       BaseURI = uri_string:parse(BaseURL),
 
       case State of
@@ -50,7 +50,8 @@ call(NameOrState, OperationId, Args) when is_atom(NameOrState); is_map(NameOrSta
 call(Name, OperationId, Args, Opts) when is_atom(Name) ->
   call(persistent_term:get({openapi,Name}), OperationId, Args, Opts);
 
-call(#{schema := Schema, uri := URI}, OperationId, Args, Opts) when is_list(Opts) ->
+call(#{schema := Schema, uri := URI} = State, OperationId, Args0, Opts) when is_list(Opts) ->
+  Args = maps:merge(maps:get(default_args, State, #{}), Args0),
   case search_operation(OperationId, Schema) of
     undefined ->
       {error, no_such_operation};
@@ -80,7 +81,7 @@ call(#{schema := Schema, uri := URI}, OperationId, Args, Opts) when is_list(Opts
               JSON = jsx:decode(Bin, [return_maps]),
               Response = openapi_schema:process(JSON, #{schema => ResponseSchema, whole_schema => Schema}),
               Response;
-            #{} when ResponseContentType == 'text/plain' ->
+            #{} when ResponseContentType == 'text/plain' orelse ResponseContentType == 'text/csv' ->
               Bin;
             undefined when Code == 204 ->
               ok;
@@ -202,7 +203,7 @@ substitute_args2(Parameters, URI, Query, Headers, Body, [{Key_,Value}|Args]) ->
 
 
 to_b(I) when is_integer(I) -> integer_to_binary(I);
-to_b(A) when is_atom(A) -> atom_to_binary(A);
+to_b(A) when is_atom(A) -> atom_to_binary(A,latin1);
 to_b(X) -> iolist_to_binary(X).
 
 

@@ -3,10 +3,13 @@
 
 
 all() ->
-  [{group, routes}].
+  [{group, routes}, {group, handling}].
 
 groups() ->
-  [{routes, [yaml_routes, json_routes]}].
+  [
+   {routes, [yaml_routes, json_routes]},
+   {handling, [callbacks]}
+  ].
 
 
 % From Cowboy documentation:
@@ -29,11 +32,19 @@ yaml_routes(_) ->
 
 json_routes(_) ->
   SchemaPath = code:lib_dir(openapi_handler, test) ++ "/redocly-big-openapi.json",
-  Routes = openapi_handler:routes(#{schema => SchemaPath, module => ?MODULE, name => petstore_json, prefix => <<"/test/json">>}),
-  [{<<"/test/json/websites/:id/webhook">>,openapi_handler, {petstore_json,<<"/websites/:id/webhook">>}},
-   {<<"/test/json/websites/:id">>,openapi_handler, {petstore_json,<<"/websites/:id">>}},
-   {<<"/test/json/websites">>,openapi_handler, {petstore_json,<<"/websites">>}},
-   {<<"/test/json/webhooks/:id">>,openapi_handler, {petstore_json,<<"/webhooks/:id">>}},
-   {<<"/test/json/webhooks">>,openapi_handler, {petstore_json,<<"/webhooks">>}}
+  Routes = openapi_handler:routes(#{schema => SchemaPath, module => ?MODULE, name => rebilly_json, prefix => <<"/test/json">>}),
+  [{<<"/test/json/websites/:id/webhook">>,openapi_handler, {rebilly_json,<<"/websites/:id/webhook">>}},
+   {<<"/test/json/websites/:id">>,openapi_handler, {rebilly_json,<<"/websites/:id">>}},
+   {<<"/test/json/websites">>,openapi_handler, {rebilly_json,<<"/websites">>}},
+   {<<"/test/json/webhooks/:id">>,openapi_handler, {rebilly_json,<<"/webhooks/:id">>}},
+   {<<"/test/json/webhooks">>,openapi_handler, {rebilly_json,<<"/webhooks">>}}
    |_] = Routes,
   ok.
+
+
+callbacks(_) ->
+  SchemaPath = code:lib_dir(openapi_handler, test) ++ "/redocly-petstore.yaml",
+  Routes = openapi_handler:routes(#{schema => SchemaPath, module => ?MODULE, name => petstore_yaml, prefix => <<"/test/yml">>}),
+  Req1 = #{method => <<"GET">>, headers => #{}}
+  ok.
+
