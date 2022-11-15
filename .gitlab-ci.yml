@@ -1,0 +1,41 @@
+stages:
+  - src
+  - test
+
+prepare-src:
+  stage: src
+  script:
+    - docker build -t openapi_handler .
+
+run-test:
+  stage: test
+  needs:
+    - prepare-src
+  script:
+    - mkdir -p test-logs
+    - docker run --rm -v ${PWD}/test-logs:/openapi_handler/test-logs openapi_handler make ci-test
+  artifacts:
+    reports:
+      junit: test-logs/*/junit_report.xml
+    when: always
+    name: "${CI_JOB_STAGE}_${BRANCH_NAME}-test"
+    expire_in: 1 week
+    paths:
+      - test-logs
+
+
+run-test-legacy:
+  stage: test
+  needs:
+    - prepare-src
+  script:
+    - mkdir -p test-logs-legacy
+    - docker run --rm -v ${PWD}/test-logs-legacy:/openapi_handler/test-logs openapi_handler make ci-test-legacy
+  artifacts:
+    reports:
+      junit: test-logs-legacy/*/junit_report.xml
+    when: always
+    name: "${CI_JOB_STAGE}_${BRANCH_NAME}-test-legacy"
+    expire_in: 1 week
+    paths:
+      - test-logs-legacy

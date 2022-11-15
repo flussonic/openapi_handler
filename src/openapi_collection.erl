@@ -229,20 +229,20 @@ list(Collection, #{} = Query0) ->
   Timing = maps:get(timing, Query, #{}),
   Cursor = maps:get(cursor, Query, #{}),
 
-  T2 = minute:now_ms(),
+  T2 = erlang:system_time(milli_seconds),
   IndexedCollection = lists:zipwith(fun(P,S) -> S#{'$position' => P} end, lists:seq(0,length(Collection)-1), Collection),
 
   Reversed = maps:get(reversed, Cursor, false),
   SortedCollection = sort_collection(maps:get(sort, Query), IndexedCollection, Reversed),
 
-  T3 = minute:now_ms(),
+  T3 = erlang:system_time(milli_seconds),
 
   {FilteredCollection, _} = filter_collection(maps:get(filter, Query, #{}), SortedCollection),
   {CursorFilteredCollection, HasLess} = filter_collection(maps:get(filter, Cursor, #{}), FilteredCollection),
 
-  T4 = minute:now_ms(),
+  T4 = erlang:system_time(milli_seconds),
   {LimitedCollection, HasMore} = limit_collection(maps:get(limit, Query, undefined), CursorFilteredCollection),
-  T5 = minute:now_ms(),
+  T5 = erlang:system_time(milli_seconds),
   SelectedCollection = select_fields(maps:get(select, Query, undefined), LimitedCollection),
   ReversedCollection = case Reversed of
     true -> lists:reverse(SelectedCollection);
@@ -250,7 +250,7 @@ list(Collection, #{} = Query0) ->
   end,
   ClearedCollection = [maps:remove('$position',S) || S <- ReversedCollection],
   ResultSet = ClearedCollection,
-  T6 = minute:now_ms(),
+  T6 = erlang:system_time(milli_seconds),
 
   % D = fun(List) ->
   %   [maps:get(name,N) || N <- List]
@@ -314,7 +314,14 @@ filter_match(Item, KV) ->
   lists:all(fun(KV1) -> filter2(KV1, Item) end, KV).
 
 
-filter2({Key,Values}, Item) when is_list(Values) ->
+filter2({Key,Values0}, Item) when is_list(Values0) ->
+  % make binaries if enum
+  Values = lists:map(fun
+    (true) -> true;
+    (false) -> false;
+    (V) when is_atom(V) -> atom_to_binary(V);
+    (V) -> V
+  end, Values0),
   lists:member(getkey(Key,Item),Values);
 
 filter2({Key,not_null}, Item) ->
