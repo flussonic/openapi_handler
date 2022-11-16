@@ -316,11 +316,10 @@ filter_match(Item, KV) ->
 
 filter2({Key,Values0}, Item) when is_list(Values0) ->
   % make binaries if enum
-  Values = lists:map(fun
-    (true) -> true;
-    (false) -> false;
-    (V) when is_atom(V) -> atom_to_binary(V);
-    (V) -> V
+  Values = lists:flatmap(fun
+    (Bool) when is_boolean(Bool) -> [Bool];
+    (V) when is_atom(V) -> [V, atom_to_binary(V)];
+    (V) -> [V]
   end, Values0),
   lists:member(getkey(Key,Item),Values);
 
