@@ -170,7 +170,7 @@ substitute_args2(_, URI, Query, Headers, Body, []) ->
   {URI#{query => uri_string:compose_query(Query)}, Headers, Body};
 
 substitute_args2(Parameters, URI, Query, Headers, _, [{json_body,Value}|Args]) ->
-  substitute_args2(Parameters, URI, Query, Headers++[{"Content-Type","application/json"}], corejson:encode(Value), Args);
+  substitute_args2(Parameters, URI, Query, Headers++[{"Content-Type","application/json"}], encode_json_tolerant(Value), Args);
 
 substitute_args2(Parameters, URI, Query, Headers, _, [{raw_body,Value}|Args]) ->
   substitute_args2(Parameters, URI, Query, Headers++[{"Content-Type","text/plain"}], Value, Args);
@@ -186,8 +186,8 @@ substitute_args2(Parameters, URI, Query, Headers, Body, [{accept,Value}|Args]) -
 
 substitute_args2(Parameters, URI, Query, Headers, Body, [{Key_,Value}|Args]) ->
   Key = atom_to_binary(Key_,latin1),
-  case lists2:mapfind(Key, name, Parameters) of
-    undefined ->
+  case lists_mapfind(Key, name, Parameters) of
+    false ->
       substitute_args2(Parameters, URI, lists:keystore(Key,1,Query,{Key,to_b(Value)}), Headers, Body, Args);
     #{in := <<"path">>} ->
       Path1 = binary:replace(maps:get(path,URI),<<"{",Key/binary,"}">>, cow_qs:urlencode(to_b(Value))),
@@ -214,4 +214,27 @@ check_cors_presence(Headers) ->
     _Absent ->
       error(no_cors_headers),
       false
+  end.
+
+
+
+encode_json_tolerant(Terms) ->
+  jsx:encode(Terms, [{error_handler,fun jsx_error_handler/3}]).
+
+jsx_error_handler(Terms, {parser, State, Handler, Stack}, Config) ->
+  case Terms of
+    [Val|Rest] when is_pid(Val) ->
+      ValBin = iolist_to_binary(io_lib:format("~p",[Val])),
+      jsx_parser:resume([ValBin|Rest], State, Handler, Stack, Config);
+    _ ->
+      % io:format("ERROR\n\nstate: ~p\nterms: ~p\n\n", [State, Terms]),
+      error({State,Terms})
+  end.
+
+
+
+lists_mapfind(Value, Key, List) ->
+  case [V || #{Key := Val} = V <- List, Val == Value] of
+    [V1|_] -> V1;
+    _ -> false
   end.
