@@ -12,7 +12,8 @@ groups() ->
      trivial,
      path_parameters,
      json_body_parameters,
-     query_string_parameters
+     query_string_parameters,
+     multiple_file_upload
    ]}
   ].
 
@@ -89,6 +90,8 @@ query_string_parameters(_) ->
 
 
 fake_request(Method, Path, Extra) ->
+  fake_request(petstore_yaml, Method, Path, Extra).
+fake_request(Name, Method, Path, Extra) ->
   StreamId = {Method, Path},
   Headers = case maps:get(body, Extra, <<>>) of
     <<_, _/binary>> -> #{<<"content-type">> => <<"application/json">>, <<"accept">> => <<"application/json">>};
@@ -96,7 +99,7 @@ fake_request(Method, Path, Extra) ->
   end,
   Req1 = Extra#{method => Method, headers => Headers, streamid => StreamId, tester => self()},
   erase(body_read),
-  {_ok, Req2, ApiRequest} = openapi_handler:do_init(Req1, petstore_yaml, Path, ?MODULE, #{}),
+  {_ok, Req2, ApiRequest} = openapi_handler:do_init(Req1, Name, Path, ?MODULE, #{no_handle => true}),
   is_map(ApiRequest) andalso openapi_handler:do_handle(Req2, ApiRequest, ?MODULE),
   receive
     {StreamId, _, Response} ->
@@ -133,4 +136,23 @@ reply(Code, Headers, Body, #{tester := Tester, streamid := StreamId} = Req) ->
   end,
   Tester ! {StreamId, self(), {response, Code, Headers, Body}},
   Req.
+
+
+read_multipart_files(Req) -> {ok, maps:get(files, Req, []), Req}.
+
+
+
+uploadFiles(#{files := Files}) ->
+  [{<<"upload_name1.txt">>,<<"11\n">>},{<<"file2.txt">>,<<"22\n">>}] = Files,
+  #{}.
+multiple_file_upload(_) ->
+  SchemaPath = code:lib_dir(openapi_handler, test) ++ "/multiple-upload.yaml",
+  Routes = openapi_handler:routes(#{schema => SchemaPath, module => ?MODULE, name => mu, prefix => <<"/test/mu">>}),
+  [{<<"/test/mu/uploadFiles">>, _, {mu, <<"/uploadFiles">>}}] = Routes,
+
+  Req = #{
+    files => [{<<"upload_name1.txt">>,<<"11\n">>},{<<"file2.txt">>,<<"22\n">>}]
+  },
+  {response, 200, _, _Res} = fake_request(mu, <<"POST">>, <<"/uploadFiles">>, Req),
+  ok.
 

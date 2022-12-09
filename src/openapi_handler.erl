@@ -132,6 +132,7 @@ do_init(Req, Name, CowboyPath, Mod_cowboy_req, Compat) ->
 
   % For compatibility with legacy Cowboy
   _ok = maps:get(ok, Compat, ok),
+  NoHandle = maps:get(no_handle, Compat, false),
 
   case Operation of
     undefined when Method == options ->
@@ -167,8 +168,10 @@ do_init(Req, Name, CowboyPath, Mod_cowboy_req, Compat) ->
             authorization => Authorization
           },
           case Module:authorize(Operation1) of
-            #{} = AuthContext ->
+            #{} = AuthContext when NoHandle ->
               {ok, Req3, Operation1#{auth_context => AuthContext}};
+            #{} = AuthContext ->
+              handle(Req, Operation1#{auth_context => AuthContext});
             {error, denied} ->
               Req4 = Mod_cowboy_req:reply(403, json_headers(), [jsx:encode(#{error => authorization_failed}),"\n"], Req3),
               {_ok, Req4, undefined}
@@ -255,10 +258,40 @@ collect_parameters(#{parameters := Parameters} = Spec, Req, ApiName, Mod_cowboy_
         #{requestBody := #{content := #{'*/*' := #{schema := #{format := <<"binary">>}}}}} ->
           Args1 = Args#{req => Req},
           {Args1, Req};
+        #{requestBody := #{content := #{'multipart/form-data' := #{schema := #{
+            type := <<"object">>, properties := #{file := #{
+              type := <<"array">>, items := #{
+                type := <<"string">>, format := <<"binary">>}}}}}}}} ->
+          {ok, Files, Req1} = read_multipart_files(Mod_cowboy_req, Req),
+          Args1 = Args#{files => Files, req => Req1},
+          {Args1, Req1};
         #{} ->
           {Args, Req}
       end
   end.
+
+
+read_multipart_files(cowboy_req, Req) ->
+  do_read_multipart_files(Req, []);
+read_multipart_files(Mod_cowboy_req, Req) ->
+  Mod_cowboy_req:read_multipart_files(Req).
+
+do_read_multipart_files(Req0, Files) ->
+  case cowboy_req:read_part(Req0) of
+    {ok, Headers, Req1} ->
+      {file, _FieldName, Filename, _CType} = cow_multipart:form_data(Headers),
+      {Bin, Req2} = read_multipart_file(Req1, <<>>),
+      do_read_multipart_files(Req2, [{Filename, Bin}| Files]);
+    {done, Req1} ->
+      {ok, Files, Req1}
+end.
+
+read_multipart_file(Req0, Bin) ->
+  case cowboy_req:read_part_body(Req0) of
+    {ok, LastBodyChunk, Req} -> {<<Bin/binary, LastBodyChunk/binary>>, Req};
+    {more, BodyChunk, Req} -> read_multipart_file(Req, <<Bin/binary, BodyChunk/binary>>)
+  end.
+
 
 
 
