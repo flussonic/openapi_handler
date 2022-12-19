@@ -184,6 +184,18 @@ substitute_args2(Parameters, URI, Query, Headers, Body, [{authorization,Value}|A
 substitute_args2(Parameters, URI, Query, Headers, Body, [{accept,Value}|Args]) ->
   substitute_args2(Parameters, URI, Query, Headers++[{"Accept",Value}], Body, Args);
 
+substitute_args2(Parameters, URI, Query, Headers, _, [{files,Files}|Args]) ->
+  Headers1 = Headers ++ [{"Content-Type", "multipart/form-data; boundary=abcde12345"}],
+  Body = iolist_to_binary([
+    lists:map(fun({Name, Bin}) -> [
+      "--abcde12345\r\n",
+      "Content-Disposition: form-data; name=\"file\"; filename=\"",Name,"\"\r\n",
+      "\r\n", Bin, "\r\n"
+    ] end, Files),
+    "--abcde12345--\r\n"
+  ]),
+  substitute_args2(Parameters, URI, Query, Headers1, Body, Args);
+
 substitute_args2(Parameters, URI, Query, Headers, Body, [{Key_,Value}|Args]) ->
   Key = atom_to_binary(Key_,latin1),
   case lists_mapfind(Key, name, Parameters) of
