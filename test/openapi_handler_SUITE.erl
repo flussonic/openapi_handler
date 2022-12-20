@@ -13,7 +13,8 @@ groups() ->
      path_parameters,
      json_body_parameters,
      query_string_parameters,
-     multiple_file_upload
+     multiple_file_upload,
+     done_request
    ]}
   ].
 
@@ -154,5 +155,16 @@ multiple_file_upload(_) ->
     files => [{<<"upload_name1.txt">>,<<"11\n">>},{<<"file2.txt">>,<<"22\n">>}]
   },
   {response, 200, _, _Res} = fake_request(mu, <<"POST">>, <<"/uploadFiles">>, Req),
+  ok.
+
+putFile(#{req := Req}) ->
+  File = #{size => 100},
+  {done, Req#{body => jsx:encode(File)}}.
+
+done_request(_) ->
+  SchemaPath = code:lib_dir(openapi_handler, test) ++ "/done_req.yaml",
+  Routes = openapi_handler:routes(#{schema => SchemaPath, module => ?MODULE, name => put, prefix => <<"/test/put">>}),
+  [{<<"/test/put/putFile">>, _, {put, <<"/putFile">>}}] = Routes,
+  _ = fake_request(put, <<"PUT">>, <<"/putFile">>, #{}),
   ok.
 

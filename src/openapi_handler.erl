@@ -298,11 +298,27 @@ read_multipart_file(Req0, Bin) ->
 handle(Req, #{} = Request) ->
   do_handle(Req, #{} = Request, cowboy_req).
 
-do_handle(Req, #{responses := Responses, name := Name, module := Module, ip := Ip} = Request, Mod_cowboy_req) ->
+do_handle(Req, #{module := Module, ip := Ip} = Request, Mod_cowboy_req) ->
   T1 = erlang:system_time(micro_seconds),
-  {ContentType, Code, Response} = handle_request(Request),
+  Response = handle_request(Request),
   % T2 = erlang:system_time(micro_seconds),
-  {Code2, Headers, PreparedResponse} = case Responses of
+  {Code2, Headers, PreparedResponse} = handle_response(Response, Request),
+  T3 = erlang:system_time(micro_seconds),
+  catch Module:log_call(Request#{code => Code2, time => T3-T1, ip => Ip}),
+  Req2 = case Code2 of
+    done -> PreparedResponse; % HACK to bypass request here
+    204 -> Mod_cowboy_req:reply(Code2, cors_headers(), [], Req);
+    _ -> gzip_and_reply(Code2, Headers, PreparedResponse, Req, Mod_cowboy_req)
+  end,
+  {ok, Req2, undefined}.
+
+% User code itself works with the request and changes its state,
+% for example, when receiving a large request body
+handle_response({done, Req}, _) ->
+  {done, undefined, Req};
+
+handle_response({ContentType, Code, Response}, #{responses := Responses, name := Name, module := Module} = Request) ->
+  case Responses of
     #{Code := #{content := #{'application/json' := #{schema := Schema}}}} when ContentType == json ->
       case openapi_schema:process(Response, #{schema => Schema, name => Name}) of
         {error, Error} ->
@@ -314,19 +330,8 @@ do_handle(Req, #{responses := Responses, name := Name, module := Module, ip := I
     #{} when is_binary(Response) andalso (ContentType == text orelse ContentType == csv) ->
       {Code, text_headers(ContentType), Response};
     #{} ->
-      {Code, json_headers(), [jsx:encode(Response),"\n"]};
-    {done, Req1} ->
-      {done, undefined, Req1}
-  end,
-  T3 = erlang:system_time(micro_seconds),
-
-  catch Module:log_call(Request#{code => Code, time => T3-T1, ip => Ip}),
-  Req2 = case Code2 of
-    done -> PreparedResponse; % HACK to bypass request here
-    204 -> Mod_cowboy_req:reply(Code2, cors_headers(), [], Req);
-    _ -> gzip_and_reply(Code2, Headers, PreparedResponse, Req, Mod_cowboy_req)
-  end,
-  {ok, Req2, undefined}.
+      {Code, json_headers(), [jsx:encode(Response),"\n"]}
+  end.
 
 
 gzip_and_reply(Code, Headers, Body, Req, Mod_cowboy_req) when Code >= 200 andalso Code < 300->
@@ -383,7 +388,6 @@ cors_headers() ->
 
 handle_request(#{module := Module, operationId := OperationId, args := Args, auth_context := AuthContext,
   'x-collection-name' := CollectionName} = OpenAPI) ->
-
   #{raw_qs := Qs} = Args,
   Type = maps:get('x-collection-type', OpenAPI),
   Name = maps:get(name, OpenAPI),
