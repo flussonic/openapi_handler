@@ -15,6 +15,7 @@ groups() ->
      query_string_parameters,
      multiple_file_upload,
      undefined_in_non_nullable,
+     erase_value_with_null,
      done_request
    ]}
   ].
@@ -81,6 +82,20 @@ path_parameters(_) ->
 undefined_in_non_nullable(_) ->
   {response, 200, _, Json} = fake_request(petstore_yaml, <<"GET">>, <<"/user/:username">>, #{bindings => #{username => <<"John">>}}),
   User = #{<<"id">> := 2384572} = jsx:decode(iolist_to_binary(Json)),
+  [<<"id">>,<<"username">>] = lists:sort(maps:keys(User)),
+  ok.
+
+
+updateUser(#{username := <<"Mary">>, json_body := Body}) ->
+  case Body of
+    #{firstName := undefined} -> #{username => <<"Mary">>, id => 15};
+    _ -> {json, 400, #{error => must_erase_firstName, body => Body}}
+  end.
+
+erase_value_with_null(_) ->
+  {response, 200, _, Json} = fake_request(petstore_yaml, <<"PUT">>, <<"/user/:username">>,
+    #{bindings => #{username => <<"Mary">>}, body => jsx:encode(#{firstName => null})}),
+  User = #{<<"id">> := 15} = jsx:decode(iolist_to_binary(Json)),
   [<<"id">>,<<"username">>] = lists:sort(maps:keys(User)),
   ok.
 

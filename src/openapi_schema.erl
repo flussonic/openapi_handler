@@ -26,6 +26,7 @@ process(Input, #{} = Opts) ->
     (auto_convert,Flag) when Flag == true; Flag == false -> ok;
     (query,Flag) when Flag == true; Flag == false -> ok;
     (apply_defaults,Flag) when Flag == true; Flag == false -> ok;
+    (patch,Flag) when Flag == true; Flag == false -> ok;
     (K,V) -> error({unknown_option,K,V})
   end, Opts),
   Schema = case Opts of
@@ -33,7 +34,12 @@ process(Input, #{} = Opts) ->
     #{type := Type} -> #{'$ref' => <<"#/components/schemas/", (atom_to_binary(Type,latin1))/binary>>};
     _ -> error(not_specified_schema)
   end,
-  case encode3(Schema, maps:merge(#{query => false, auto_convert => true},Opts), Input, []) of
+  DefaultOpts = #{
+    query => false,
+    patch => false,
+    auto_convert => true
+  },
+  case encode3(Schema, maps:merge(DefaultOpts,Opts), Input, []) of
     {error, Error} ->
       {error, Error};
     R ->
@@ -50,6 +56,9 @@ encode3(#{nullable := true}, _, undefined, _) ->
   undefined;
 
 encode3(#{nullable := true}, _, null, _) ->
+  undefined;
+
+encode3(#{}, #{patch := true}, null, _) ->
   undefined;
 
 encode3(Schema, #{} = Opts, Null, Path) when Null == null orelse Null == undefined ->
@@ -140,12 +149,14 @@ encode3(#{type := <<"object">>, properties := Properties}, #{query := Query} = O
       end,
 
       NullableProp = maps:get(nullable, Prop, undefined) == true,
+      Patching = maps:get(patch, Opts, undefined) == true,
       UpdatedObj = case ExtractedValue of
         {ok, NullFlag} when Query andalso (NullFlag == null orelse NullFlag == not_null) ->
           Obj#{Field => NullFlag};
 
         % Silently drop undefined values for non-nullable fields
-        {ok, Null} when (Null == null orelse Null == undefined) andalso not NullableProp ->
+        {ok, Null} when (Null == null orelse Null == undefined) andalso
+          not NullableProp andalso not Patching ->
           Obj;
         {ok, Value} ->
           case encode3(Prop, Opts, Value, Path ++ [Field]) of
