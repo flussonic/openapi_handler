@@ -14,6 +14,7 @@ groups() ->
      json_body_parameters,
      query_string_parameters,
      multiple_file_upload,
+     undefined_in_non_nullable,
      done_request
    ]}
   ].
@@ -68,11 +69,21 @@ trivial(_) ->
   ok.
 
 % A parameter in path. Schema says id is integer, so it is converted even if handler returns it as a binary
+getUserByName(#{username := <<"John">>}) -> #{username => <<"John">>, id => <<"2384572">>, pet => undefined};
 getUserByName(#{username := <<"Jack">>}) -> #{username => <<"Jack">>, id => <<"238457234857">>}.
+
 path_parameters(_) ->
   {response, 200, _, RespBody} = fake_request(<<"GET">>, <<"/user/:username">>, #{bindings => #{username => <<"Jack">>}}),
   #{<<"id">> := 238457234857} = jsx:decode(iolist_to_binary(RespBody)),
   ok.
+
+
+undefined_in_non_nullable(_) ->
+  {response, 200, _, Json} = fake_request(petstore_yaml, <<"GET">>, <<"/user/:username">>, #{bindings => #{username => <<"John">>}}),
+  User = #{<<"id">> := 2384572} = jsx:decode(iolist_to_binary(Json)),
+  [<<"id">>,<<"username">>] = lists:sort(maps:keys(User)),
+  ok.
+
 
 % Object in a JSON body
 placeOrder(#{json_body := #{petId := 7214, status := placed} = Order}) -> Order#{quantity => 31}.
