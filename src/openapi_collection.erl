@@ -95,13 +95,14 @@ parse_qs_api([{Key,Value}|Qs], Query, Opts) ->
   L1 = size(Key) - 3,
   L2 = size(Key) - 4,
   L3 = size(Key) - 5,
+  L4 = size(Key) - 7,
   Filter = maps:get(filter, Query, #{}),
   {Key1, Value1} = case Key of
     <<Key0:L1/binary, "_ne">> -> {Key0, #{'$ne' => Value}};
     <<Key0:L1/binary, "_gt">> -> {Key0, #{'$gt' => Value}};
     <<Key0:L1/binary, "_lt">> -> {Key0, #{'$lt' => Value}};
     <<Key0:L1/binary, "_is">> when Value == <<"null">> -> {Key0, null};
-    <<Key0:L1/binary, "_is">> when Value == <<"not_null">> -> {Key0, not_null};
+    <<Key0:L4/binary, "_is_not">> when Value == <<"null">> -> {Key0, not_null};
     <<Key0:L2/binary, "_gte">> -> {Key0, #{'$gte' => Value}};
     <<Key0:L2/binary, "_lte">> -> {Key0, #{'$lte' => Value}};
     <<Key0:L3/binary, "_like">> -> {Key0, #{'$like' => Value}};
@@ -147,7 +148,7 @@ encode_qs_api2([{filter,Filter}|Query]) ->
     Enc({Key,#{'$lte' := V}}) -> [{<<Key/binary,"_lte">>, V}];
     Enc({Key,#{'$like' := V}}) -> [{<<Key/binary,"_like">>, V}];
     Enc({Key,null}) -> [{<<Key/binary,"_is">>, <<"null">>}];
-    Enc({Key,not_null}) -> [{<<Key/binary,"_is">>, <<"not_null">>}];
+    Enc({Key,not_null}) -> [{<<Key/binary,"_is_not">>, <<"null">>}];
     Enc({Key,V}) when is_list(V) -> [{Key, iolist_to_binary(lists:join($,,V))}];
     Enc({Key,#{}=V}) ->
       [ [{<<Key/binary,".",K2/binary>>,V2} || {K2,V2} <- Enc({K1,V1})] || {K1,V1} <- maps:to_list(V)];
