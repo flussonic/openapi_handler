@@ -66,11 +66,18 @@ call(#{schema := Schema, uri := URI} = State, OperationId, Args0, Opts) when is_
         _ -> RequestBody
       end]),
       Timeout = proplists:get_value(timeout, Opts, 50000),
-      case lhttpc:request(RequestURL, Method, RequestHeaders, RequestBody, Timeout) of
+      Result = case lhttpc:request(RequestURL, Method, RequestHeaders, RequestBody, Timeout) of
+        {ok, {{Code0,_},ResponseHeaders0,Bin0}} ->
+          {ok, Code0, [{string:to_lower(K),V} || {K,V} <- ResponseHeaders0], Bin0};
+        {error, E0} ->
+          {error, E0}
+      end,
+
+      case Result of
         {ok, {{Code,_},ResponseHeaders,Bin}} when is_map_key(Code, Responses) ->
           ?LOG_DEBUG("< ~p\n~p\n~s", [Code, ResponseHeaders,Bin]),
           check_cors_presence(ResponseHeaders),
-          ResponseContentType = case proplists:get_value("Content-Type", ResponseHeaders) of
+          ResponseContentType = case proplists:get_value("content-type", ResponseHeaders) of
             undefined -> undefined;
             CT -> list_to_atom(CT)
           end,
@@ -108,7 +115,7 @@ call(#{schema := Schema, uri := URI} = State, OperationId, Args0, Opts) when is_
           {error, denied};
         {ok, {{Code,_},ResponseHeaders,Bin}} ->
           check_cors_presence(ResponseHeaders),
-          Response = case proplists:get_value("Content-Type", ResponseHeaders) of
+          Response = case proplists:get_value("content-type", ResponseHeaders) of
             "application/json" -> try jsx:decode(Bin, [return_maps,{labels,atom}])
               catch _:_ -> Bin end;
             _ -> Bin
@@ -220,7 +227,7 @@ to_b(X) -> iolist_to_binary(X).
 
 
 check_cors_presence(Headers) ->
-  case proplists:get_value("Access-Control-Allow-Origin", Headers) of
+  case proplists:get_value("access-control-allow-origin", Headers) of
     "*" ->
       true;
     _Absent ->
