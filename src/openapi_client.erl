@@ -74,7 +74,7 @@ call(#{schema := Schema, uri := URI} = State, OperationId, Args0, Opts) when is_
       end,
 
       case Result of
-        {ok, {{Code,_},ResponseHeaders,Bin}} when is_map_key(Code, Responses) ->
+        {ok, Code,ResponseHeaders,Bin} when is_map_key(Code, Responses) ->
           ?LOG_DEBUG("< ~p\n~p\n~s", [Code, ResponseHeaders,Bin]),
           check_cors_presence(ResponseHeaders),
           ResponseContentType = case proplists:get_value("content-type", ResponseHeaders) of
@@ -101,19 +101,19 @@ call(#{schema := Schema, uri := URI} = State, OperationId, Args0, Opts) when is_
             404 -> {error, enoent};
             _ -> {error, {Code, Response1}}
           end;
-        {ok, {{404,_},ResponseHeaders,Body}} ->
+        {ok, 404,ResponseHeaders,Body} ->
           ?LOG_INFO("~s ~s -> 404 ~p", [Method, uri_string:recompose(RequestURI), Body]),
           check_cors_presence(ResponseHeaders),
           {error, enoent};
-        {ok, {{503,_},ResponseHeaders,Body}} ->
+        {ok, 503,ResponseHeaders,Body} ->
           ?LOG_INFO("~s ~s -> 503 ~p", [Method, uri_string:recompose(RequestURI), Body]),
           check_cors_presence(ResponseHeaders),
           {error, unavailable};
-        {ok, {{403,_},ResponseHeaders,_}} ->
+        {ok, 403,ResponseHeaders,_} ->
           ?LOG_INFO("~s ~s -> 403", [Method, uri_string:recompose(RequestURI)]),
           check_cors_presence(ResponseHeaders),
           {error, denied};
-        {ok, {{Code,_},ResponseHeaders,Bin}} ->
+        {ok, Code,ResponseHeaders,Bin} ->
           check_cors_presence(ResponseHeaders),
           Response = case proplists:get_value("content-type", ResponseHeaders) of
             "application/json" -> try jsx:decode(Bin, [return_maps,{labels,atom}])
