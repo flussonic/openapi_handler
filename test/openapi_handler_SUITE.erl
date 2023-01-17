@@ -22,6 +22,17 @@ groups() ->
    ]}
   ].
 
+-ifdef(legacy).
+start_http(Routes) ->
+  cowboy:start_http(petstore_api_server, 1, [{port, 0}],
+    [{env, [{dispatch, cowboy_router:compile([{'_', Routes}])}]}]).
+-else.
+start_http(Routes) ->
+  cowboy:start_clear(petstore_api_server, [{port, 0}],
+    #{env => #{dispatch => cowboy_router:compile([{'_', Routes}])}}).
+-endif.
+
+
 init_per_suite(Config) ->
   {ok, _} = application:ensure_all_started(cowboy),
   {ok, _} = application:ensure_all_started(lhttpc),
@@ -34,8 +45,7 @@ init_per_suite(Config) ->
     module => fake_petstore
   }),
   {ok, _} = application:ensure_all_started(cowboy),
-  cowboy:start_http(petstore_api_server, 1, [{port, 0}],
-    [{env, [{dispatch, cowboy_router:compile([{'_', PetstoreRoutes}])}]}]),
+  start_http(PetstoreRoutes),
   PetstorePort = ranch:get_port(petstore_api_server),
 
   PetstoreApi = openapi_client:load(#{
