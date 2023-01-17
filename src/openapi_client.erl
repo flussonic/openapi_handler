@@ -62,7 +62,9 @@ call(Name, OperationId, Args, Opts) when is_atom(Name) ->
   call(persistent_term:get({openapi,Name}), OperationId, Args, Opts);
 
 call(#{schema := Schema, uri := URI} = State, OperationId, Args0, Opts) when is_list(Opts) ->
-  Args = maps:merge(maps:get(default_args, State, #{}), Args0),
+  Args1 = maps:merge(maps:get(default_args, State, #{}), Args0),
+  % Skip useless flags from openapi_handler
+  Args = maps:without([agent_ip,auth_context,raw_qs,req,collection_type,schema_name], Args1),
   case search_operation(OperationId, Schema) of
     undefined ->
       {error, no_such_operation};
