@@ -4,6 +4,7 @@
 
 -export([init/2, handle/2, terminate/3]).
 -export([routes/1, load_schema/2, choose_module/0]).
+-export([read_schema/1]).
 -export([routes_sort/1]). % for tests
 
 % For compatibility with legacy Cowboy. Called by openapi_handler_legacy.
@@ -82,6 +83,10 @@ load_schema(#{} = Schema, Name) ->
   Schema;
 
 load_schema(SchemaPath, Name) when is_list(SchemaPath) orelse is_binary(SchemaPath) ->
+  DecodedSchema = read_schema(SchemaPath),
+  load_schema(DecodedSchema, Name).
+
+read_schema(SchemaPath) ->
   {ok, Bin} = file:read_file(SchemaPath),
   Format = case filename:extension(iolist_to_binary(SchemaPath)) of
     <<".yaml">> -> yaml;
@@ -97,7 +102,8 @@ load_schema(SchemaPath, Name) when is_list(SchemaPath) orelse is_binary(SchemaPa
       [Decoded0] = yamerl:decode(Bin, [{erlang_atom_autodetection, false}, {map_node_format, map}, {str_node_as_binary, true}]),
       map_keys_to_atom(Decoded0)
   end,
-  load_schema(DecodedSchema, Name).
+  DecodedSchema.
+
 
 %% yamerl lacks an option to make all map keys atom, but keep values binary. So, we need this converter.
 map_keys_to_atom(#{} = Map) ->

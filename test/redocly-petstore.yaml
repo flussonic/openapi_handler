@@ -812,6 +812,11 @@ paths:
           description: Invalid user supplied
         '404':
           description: User not found
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
       requestBody:
         content:
           application/json:

@@ -7,19 +7,24 @@
 
 load(#{schema_url := URL} = State) ->
   case get_url(iolist_to_binary(URL)) of
-    {ok, Bin} ->
-      Schema = jsx:decode(Bin, [return_maps,{labels,atom}]),
+    {ok, _} ->
+      Schema = openapi_handler:read_schema(URL),
       #{servers := [#{url := BaseURL}|_]} = Schema,
       BaseURI = uri_string:parse(BaseURL),
+      BasePath = maps:get(path,BaseURI),
 
       case State of
         #{url := URL0} ->
-          URI = uri_string:parse(URL0),
-          URI1 = URI#{path => maps:get(path,BaseURI)},
-          (maps:remove(url,State))#{schema => Schema, uri => URI1};
+          case uri_string:parse(URL0) of
+            #{path := <<>>} = URI ->
+              URI1 = URI#{path => BasePath},
+              (maps:remove(url,State))#{schema => Schema, uri => URI1};
+            #{} = URI ->
+              (maps:remove(url,State))#{schema => Schema, uri => URI}
+          end;
         #{} ->
           URI = uri_string:parse(URL),
-          URI1 = (maps:with([host,port,scheme],URI))#{path => maps:get(path,BaseURI)},
+          URI1 = (maps:with([host,port,scheme],URI))#{path => BasePath},
           State#{schema => Schema, uri => URI1}
       end;
     undefined ->
@@ -37,6 +42,12 @@ get_url(<<"http",_/binary>> = URL) ->
   case lhttpc:request(URL, get, [], <<>>, 30000) of
     {ok, {{200,_},_,Bin}} -> {ok, Bin};
     _ -> undefined
+  end;
+
+get_url(Path) ->
+  case file:read_file(Path) of
+    {ok, Bin} -> {ok, Bin};
+    {error, _E} -> undefined
   end.
 
 
@@ -150,7 +161,8 @@ search_operation_in_paths(OperationId, [{Path,Methods}|Paths]) ->
       search_operation_in_paths(OperationId, Paths);
     #{} = Op ->
       Parameters1 = maps:get(parameters, Op, []),
-      Responses = maps:from_list([{list_to_integer(atom_to_list(K)),V} || {K,V} <- maps:to_list(maps:get(responses, Op, #{}))]),
+      OpResponses = [{K,V} || {K,V} <- maps:to_list(maps:get(responses, Op, #{})), K =/= default],
+      Responses = maps:from_list([{list_to_integer(atom_to_list(K)),V} || {K,V} <- OpResponses]),
       Op#{parameters => Parameters ++ Parameters1, path => atom_to_binary(Path,latin1), responses => Responses}
   end.
 
@@ -211,12 +223,16 @@ substitute_args2(Parameters, URI, Query, Headers, Body, [{Key_,Value}|Args]) ->
     #{in := <<"path">>} ->
       Path1 = binary:replace(maps:get(path,URI),<<"{",Key/binary,"}">>, cow_qs:urlencode(to_b(Value))),
       substitute_args2(Parameters, URI#{path => Path1}, Query, Headers, Body, Args);
-    #{in := <<"query">>} ->
-      substitute_args2(Parameters, URI, lists:keystore(Key,1,Query,{Key,to_b(Value)}), Headers, Body, Args);
+    #{in := <<"query">>} = Spec ->
+      Style = maps:get(style, Spec, undefined),
+      BinValue = case Value of
+        [_|_] when Style == <<"form">> -> iolist_to_binary(lists:join(<<",">>, [to_b(I) || I <- Value]));
+        _ -> to_b(Value)
+      end,
+      substitute_args2(Parameters, URI, lists:keystore(Key,1,Query,{Key,BinValue}), Headers, Body, Args);
     #{in := <<"header">>} ->
       substitute_args2(Parameters, URI, Query, Headers++[{Key,to_b(Value)}], Body, Args);
     _ ->
-      ct:pal("params(~p) ~p\n", [Key, Parameters]),
       substitute_args2(Parameters, URI, Query, Headers, Body, Args)
   end.
 
@@ -231,8 +247,7 @@ check_cors_presence(Headers) ->
     "*" ->
       true;
     _Absent ->
-      error(no_cors_headers),
-      false
+      error([no_cors_headers,Headers])
   end.
 
 
