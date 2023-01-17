@@ -5,50 +5,29 @@
 -export([load/1, call/3, call/4, store/2]).
 
 
-load(#{schema_url := URL} = State) ->
-  case get_url(iolist_to_binary(URL)) of
-    {ok, _} ->
-      Schema = openapi_handler:read_schema(URL),
-      #{servers := [#{url := BaseURL}|_]} = Schema,
-      BaseURI = uri_string:parse(BaseURL),
-      BasePath = maps:get(path,BaseURI),
+load(#{schema_url := Path0} = State) ->
+  Path = case iolist_to_binary(Path0) of
+    <<"file://",U/binary>> -> U;
+    U -> U
+  end,
+  Schema = openapi_handler:read_schema(Path),
+  #{servers := [#{url := BaseURL}|_]} = Schema,
+  BaseURI = uri_string:parse(BaseURL),
+  BasePath = maps:get(path,BaseURI),
 
-      case State of
-        #{url := URL0} ->
-          case uri_string:parse(URL0) of
-            #{path := <<>>} = URI ->
-              URI1 = URI#{path => BasePath},
-              (maps:remove(url,State))#{schema => Schema, uri => URI1};
-            #{} = URI ->
-              (maps:remove(url,State))#{schema => Schema, uri => URI}
-          end;
-        #{} ->
-          URI = uri_string:parse(URL),
-          URI1 = (maps:with([host,port,scheme],URI))#{path => BasePath},
-          State#{schema => Schema, uri => URI1}
+  case State of
+    #{url := URL0} ->
+      case uri_string:parse(iolist_to_binary(URL0)) of
+        #{path := <<>>} = URI ->
+          URI1 = URI#{path => BasePath},
+          (maps:remove(url,State))#{schema => Schema, uri => URI1};
+        #{} = URI ->
+          (maps:remove(url,State))#{schema => Schema, uri => URI}
       end;
-    undefined ->
-      {error, no_schema}
+    #{} ->
+      State#{schema => Schema, uri => BaseURI}
   end.
 
-
-get_url(<<"file://",Path/binary>>) ->
-  case file:read_file(Path) of
-    {ok, Bin} -> {ok, Bin};
-    {error, _E} -> undefined
-  end;
-
-get_url(<<"http",_/binary>> = URL) ->
-  case lhttpc:request(URL, get, [], <<>>, 30000) of
-    {ok, {{200,_},_,Bin}} -> {ok, Bin};
-    _ -> undefined
-  end;
-
-get_url(Path) ->
-  case file:read_file(Path) of
-    {ok, Bin} -> {ok, Bin};
-    {error, _E} -> undefined
-  end.
 
 
 store(Name, #{schema := _} = SchemaState) ->

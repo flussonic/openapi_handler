@@ -34,3 +34,8 @@ findPetsByStatus(#{status := [pending,sold]}) ->
 % Object in a JSON body
 placeOrder(#{json_body := #{petId := 7214, status := placed} = Order}) ->
   Order#{quantity => 31}.
+
+
+% This responses simulates response of openapi_client:call
+getInventory(#{}) ->
+  {error, {501, #{error => <<"not_implemented">>}}}.

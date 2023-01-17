@@ -17,6 +17,7 @@ groups() ->
      multiple_file_upload,
      undefined_in_non_nullable,
      erase_value_with_null,
+     error_response,
      done_request
    ]}
   ].
@@ -201,3 +202,8 @@ done_request(_) ->
   _ = fake_request(put, <<"PUT">>, <<"/putFile">>, #{}),
   ok.
 
+
+error_response(_) ->
+  {error, {501,#{error := <<"not_implemented">>}}} =
+    openapi_client:call(petstore_api, getInventory, #{}),
+  ok.
