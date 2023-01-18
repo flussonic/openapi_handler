@@ -10,6 +10,7 @@ groups() ->
    {routes, [yaml_routes, json_routes]},
    {handling, [
      trivial,
+     non_existing_api,
      not_implemented,
      path_parameters,
      json_body_parameters,
@@ -99,6 +100,9 @@ trivial(_) ->
   % reliably tell user that server response is just an undescribed something
   {error, {200,#{say := <<"goodbye">>}}} = openapi_client:call(petstore_api,logoutUser, #{}),
   ok.
+
+non_existing_api(_) ->
+  {error, not_loaded} = openapi_client:call(non_existing_api,some_method,#{}).
 
 not_implemented(_) ->
   {error, {501, #{error := <<"not_implemented">>}}} =

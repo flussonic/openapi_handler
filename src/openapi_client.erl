@@ -38,7 +38,11 @@ call(NameOrState, OperationId, Args) when is_atom(NameOrState); is_map(NameOrSta
 
 
 call(Name, OperationId, Args, Opts) when is_atom(Name) ->
-  call(persistent_term:get({openapi,Name}), OperationId, Args, Opts);
+  try persistent_term:get({openapi,Name}) of
+    Api -> call(Api, OperationId, Args, Opts)
+  catch
+    _:_:_ -> {error, not_loaded}
+  end;
 
 call(#{schema := Schema, uri := URI} = State, OperationId, Args0, Opts) when is_list(Opts) ->
   Args1 = maps:merge(maps:get(default_args, State, #{}), Args0),
