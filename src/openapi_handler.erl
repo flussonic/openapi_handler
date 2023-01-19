@@ -4,6 +4,7 @@
 
 -export([init/2, handle/2, terminate/3]).
 -export([routes/1, load_schema/2, choose_module/0]).
+-export([read_schema/1]).
 -export([routes_sort/1]). % for tests
 
 % For compatibility with legacy Cowboy. Called by openapi_handler_legacy.
@@ -82,7 +83,14 @@ load_schema(#{} = Schema, Name) ->
   Schema;
 
 load_schema(SchemaPath, Name) when is_list(SchemaPath) orelse is_binary(SchemaPath) ->
-  {ok, Bin} = file:read_file(SchemaPath),
+  DecodedSchema = read_schema(SchemaPath),
+  load_schema(DecodedSchema, Name).
+
+read_schema(SchemaPath) ->
+  Bin = case file:read_file(SchemaPath) of
+    {ok, Bin_} -> Bin_;
+    {error, E} -> error({E,SchemaPath})
+  end,
   Format = case filename:extension(iolist_to_binary(SchemaPath)) of
     <<".yaml">> -> yaml;
     <<".yml">> -> yaml;
@@ -97,7 +105,8 @@ load_schema(SchemaPath, Name) when is_list(SchemaPath) orelse is_binary(SchemaPa
       [Decoded0] = yamerl:decode(Bin, [{erlang_atom_autodetection, false}, {map_node_format, map}, {str_node_as_binary, true}]),
       map_keys_to_atom(Decoded0)
   end,
-  load_schema(DecodedSchema, Name).
+  DecodedSchema.
+
 
 %% yamerl lacks an option to make all map keys atom, but keep values binary. So, we need this converter.
 map_keys_to_atom(#{} = Map) ->
@@ -405,6 +414,8 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, aut
       try Module:OperationId(Query) of
         {json, Code, Response} ->
           {json, Code, Response};
+        {error, {Code, #{} = Response}} when is_integer(Code) ->
+          {json, Code, Response};
         #{CollectionName := FullList} when is_list(FullList) ->
           T2 = erlang:system_time(milli_seconds),
           R = openapi_collection:list(FullList, Query#{timing => #{load => T2-T1}, collection => CollectionName}),
@@ -434,6 +445,8 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, acc
       {json, 404, #{error => not_found}};
     {error, unavailable} ->
       {json, 503, #{error => unavailable}};
+    {error, {Code, #{} = Response}} when is_integer(Code) ->
+      {json, Code, Response};
     ok ->
       {json, 204, undefined};
     {json, Code, Response} ->

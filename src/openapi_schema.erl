@@ -190,6 +190,9 @@ encode3(#{type := <<"array">>, items := ItemSpec}, Opts, Input, Path) when is_li
   end, [], Input),
   Encoded;
 
+encode3(#{type := <<"array">>} = Spec, #{auto_convert := true} = O, Input, Path) when is_binary(Input) ->
+  encode3(Spec, O, binary:split(Input, <<",">>, [global]), Path);
+
 encode3(#{type := <<"array">>, items := _ItemSpec}, _Opts, Input, Path) when not is_list(Input) ->
   {error, #{error => not_array, path => Path, input => Input}};
 

@@ -10,20 +10,53 @@ groups() ->
    {routes, [yaml_routes, json_routes]},
    {handling, [
      trivial,
+     non_existing_api,
+     not_implemented,
      path_parameters,
      json_body_parameters,
      query_string_parameters,
      multiple_file_upload,
      undefined_in_non_nullable,
      erase_value_with_null,
+     error_response,
      done_request
    ]}
   ].
 
-init_per_group(_, Config) ->
+-ifdef(legacy).
+start_http(Routes) ->
+  cowboy:start_http(petstore_api_server, 1, [{port, 0}],
+    [{env, [{dispatch, cowboy_router:compile([{'_', Routes}])}]}]).
+-else.
+start_http(Routes) ->
+  cowboy:start_clear(petstore_api_server, [{port, 0}],
+    #{env => #{dispatch => cowboy_router:compile([{'_', Routes}])}}).
+-endif.
+
+
+init_per_suite(Config) ->
+  {ok, _} = application:ensure_all_started(cowboy),
+  {ok, _} = application:ensure_all_started(lhttpc),
+
+  PetstorePath = filename:join(code:lib_dir(openapi_handler, test),"redocly-petstore.yaml"),
+  PetstoreRoutes = openapi_handler:routes(#{
+    schema => PetstorePath,
+    prefix => <<"/test/yml">>,
+    name => petstore_server_api,
+    module => fake_petstore
+  }),
+  {ok, _} = application:ensure_all_started(cowboy),
+  start_http(PetstoreRoutes),
+  PetstorePort = ranch:get_port(petstore_api_server),
+
+  PetstoreApi = openapi_client:load(#{
+    schema_url => PetstorePath,
+    url => <<"http://127.0.0.1:",(integer_to_binary(PetstorePort))/binary,"/test/yml">>
+  }),
+  openapi_client:store(petstore_api, PetstoreApi),
   Config.
 
-end_per_group(_, Config) ->
+end_per_suite(Config) ->
   Config.
 
 % From Cowboy documentation:
@@ -62,62 +95,51 @@ authorize(_) -> #{auth => yes_please}.
 postprocess(JSON, _) -> JSON.
 
 
-% Simple callback with no parameters
-logoutUser(_) -> #{say => goodbye}.
 trivial(_) ->
-  {response, 200, _, RespBody} = fake_request(<<"GET">>, <<"/user/logout">>, #{}),
-  #{<<"say">> := <<"goodbye">>} = jsx:decode(iolist_to_binary(RespBody)),
+  % Here we get error with code 200 because no response is described and we cannot
+  % reliably tell user that server response is just an undescribed something
+  {error, {200,#{say := <<"goodbye">>}}} = openapi_client:call(petstore_api,logoutUser, #{}),
   ok.
 
-% A parameter in path. Schema says id is integer, so it is converted even if handler returns it as a binary
-getUserByName(#{username := <<"John">>}) -> #{username => <<"John">>, id => <<"2384572">>, pet => undefined};
-getUserByName(#{username := <<"Jack">>}) -> #{username => <<"Jack">>, id => <<"238457234857">>}.
+non_existing_api(_) ->
+  {error, not_loaded} = openapi_client:call(non_existing_api,some_method,#{}).
+
+not_implemented(_) ->
+  {error, {501, #{error := <<"not_implemented">>}}} =
+    openapi_client:call(petstore_api, createUsersWithArrayInput, #{}),
+  ok.
+
 
 path_parameters(_) ->
-  {response, 200, _, RespBody} = fake_request(<<"GET">>, <<"/user/:username">>, #{bindings => #{username => <<"Jack">>}}),
-  #{<<"id">> := 238457234857} = jsx:decode(iolist_to_binary(RespBody)),
+  #{id := 238457234857} = openapi_client:call(petstore_api,getUserByName,#{username => <<"Jack">>}),
   ok.
 
 
 undefined_in_non_nullable(_) ->
-  {response, 200, _, Json} = fake_request(petstore_yaml, <<"GET">>, <<"/user/:username">>, #{bindings => #{username => <<"John">>}}),
-  User = #{<<"id">> := 2384572} = jsx:decode(iolist_to_binary(Json)),
-  [<<"id">>,<<"username">>] = lists:sort(maps:keys(User)),
+  User = #{id := 2384572} = openapi_client:call(petstore_api,getUserByName,#{username => <<"John">>}),
+  [id,username] = lists:sort(maps:keys(User)),
   ok.
 
-
-updateUser(#{username := <<"Mary">>, json_body := Body}) ->
-  case Body of
-    #{firstName := undefined} -> #{username => <<"Mary">>, id => 15};
-    _ -> {json, 400, #{error => must_erase_firstName, body => Body}}
-  end.
 
 erase_value_with_null(_) ->
-  {response, 200, _, Json} = fake_request(petstore_yaml, <<"PUT">>, <<"/user/:username">>,
-    #{bindings => #{username => <<"Mary">>}, body => jsx:encode(#{firstName => null})}),
-  User = #{<<"id">> := 15} = jsx:decode(iolist_to_binary(Json)),
-  [<<"id">>,<<"username">>] = lists:sort(maps:keys(User)),
+  Args = #{username => <<"Mary">>, json_body => #{firstName => null}},
+  User = #{id := 15} = openapi_client:call(petstore_api,updateUser,Args),
+  [id,username] = lists:sort(maps:keys(User)),
   ok.
 
 
-% Object in a JSON body
-placeOrder(#{json_body := #{petId := 7214, status := placed} = Order}) -> Order#{quantity => 31}.
 json_body_parameters(_) ->
   Order0 = #{id => 1000011, petId => 7214, shipDate => <<"20221103-221700">>, status => placed, requestId => <<"testrequestid">>},
-  {response, 200, _, RespBody} = fake_request(<<"POST">>, <<"/store/order">>, #{body => jsx:encode(Order0)}),
-  #{<<"quantity">> := 31} = jsx:decode(iolist_to_binary(RespBody)),
+  #{quantity := 31} =
+    openapi_client:call(petstore_api, placeOrder, #{json_body => Order0}),
   ok.
 
-% A parameter in a query string
-findPetsByStatus(_) -> #{}.
 query_string_parameters(_) ->
-  %{response, 200, _, RespBody} = fake_request(<<"GET">>, <<"/pet/findByStatus">>, #{qs => <<"status=pending,sold">>}),
-  %#{} = jsx:decode(iolist_to_binary(RespBody)),
-  {skip, qs_array_not_implemented}.
+  [#{name := <<"Dingo">>}] =
+    openapi_client:call(petstore_api, findPetsByStatus, #{status => [pending,sold]}),
+  ok.
 
 
-fake_request(Method, Path, Extra) ->
-  fake_request(petstore_yaml, Method, Path, Extra).
 fake_request(Name, Method, Path, Extra) ->
   StreamId = {Method, Path},
   Headers = case maps:get(body, Extra, <<>>) of
@@ -194,3 +216,8 @@ done_request(_) ->
   _ = fake_request(put, <<"PUT">>, <<"/putFile">>, #{}),
   ok.
 
+
+error_response(_) ->
+  {error, {501,#{error := <<"not_implemented">>}}} =
+    openapi_client:call(petstore_api, getInventory, #{}),
+  ok.
