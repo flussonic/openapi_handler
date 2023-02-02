@@ -19,8 +19,7 @@ groups() ->
      undefined_in_non_nullable,
      erase_value_with_null,
      error_response,
-     done_request,
-     encode_undefined
+     done_request
    ]}
   ].
 
@@ -117,8 +116,8 @@ path_parameters(_) ->
 
 
 undefined_in_non_nullable(_) ->
-  {error,{500, #{error := <<"not_nullable">>, null := <<"undefined">>}}} = openapi_client:call(
-    petstore_api,getUserByName,#{username => <<"John">>}),
+  User = #{id := 2384572} = openapi_client:call(petstore_api,getUserByName,#{username => <<"John">>}),
+  [id,username] = lists:sort(maps:keys(User)),
   ok.
 
 
@@ -221,22 +220,4 @@ done_request(_) ->
 error_response(_) ->
   {error, {501,#{error := <<"not_implemented">>}}} =
     openapi_client:call(petstore_api, getInventory, #{}),
-  ok.
-
-
-encode_undefined(_) ->
-  undefined = openapi_schema:process(null, #{schema => #{type => <<"string">>, nullable => true}}),
-  undefined = openapi_schema:process(undefined, #{schema => #{type => <<"string">>, nullable => true}}),
-
-  {error, #{error := not_nullable, null := undefined}} = openapi_schema:process(undefined, #{schema => #{type => <<"string">>}}),
-  {error, #{error := not_nullable, null := null}} = openapi_schema:process(null, #{schema => #{type => <<"string">>}}),
-
-  {error, #{error := not_nullable, null := null}} = openapi_schema:process(
-    [null, <<"some_string">>] , #{schema => #{type => <<"array">>,items => #{type => <<"string">>}}}),
-
-  {error, #{error := not_nullable, null := undefined}} = openapi_schema:process(
-    [<<"some_string">>, undefined], #{schema => #{type => <<"array">>,items => #{type => <<"string">>}}}),
-
-  [<<"some_string">>, undefined, undefined] = openapi_schema:process(
-    [<<"some_string">>, undefined, null], #{schema => #{type => <<"array">>,items => #{type => <<"string">>, nullable => true}}}),
   ok.

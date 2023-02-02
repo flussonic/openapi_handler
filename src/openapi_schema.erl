@@ -62,7 +62,7 @@ encode3(#{}, #{patch := true}, null, _) ->
   undefined;
 
 encode3(Schema, #{} = Opts, Null, Path) when Null == null orelse Null == undefined ->
-  {error, #{error => not_nullable, path => Path, null => Null, opts => Opts, schema => Schema}};
+  error(#{error => must_not_get_here, path => Path, null => Null, opts => Opts, schema => Schema});
 
 encode3(#{'$ref' := <<"#/components/schemas/",Ref/binary>>}, #{} = Opts, Input, Path) ->
   TypeName = binary_to_atom(Ref,latin1), % It is ok, because this is a limited and trusted schema
@@ -148,9 +148,16 @@ encode3(#{type := <<"object">>, properties := Properties}, #{query := Query} = O
         _ -> #{}
       end,
 
+      NullableProp = maps:get(nullable, Prop, undefined) == true,
+      Patching = maps:get(patch, Opts, undefined) == true,
       UpdatedObj = case ExtractedValue of
         {ok, NullFlag} when Query andalso (NullFlag == null orelse NullFlag == not_null) ->
           Obj#{Field => NullFlag};
+
+        % Silently drop undefined values for non-nullable fields
+        {ok, Null} when (Null == null orelse Null == undefined) andalso
+          not NullableProp andalso not Patching ->
+          Obj;
         {ok, Value} ->
           case encode3(Prop, Opts, Value, Path ++ [Field]) of
             {error, _} = E ->
