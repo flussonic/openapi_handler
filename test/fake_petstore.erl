@@ -6,9 +6,6 @@
 authorize(_) ->
   #{auth => yes_please}.
 
-postprocess(JSON, _) ->
-  JSON.
-
 
 % Simple callback with no parameters
 logoutUser(_) ->

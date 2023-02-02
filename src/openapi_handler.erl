@@ -332,8 +332,11 @@ handle_response({ContentType, Code, Response}, #{responses := Responses, name :=
       case openapi_schema:process(Response, #{schema => Schema, name => Name}) of
         {error, Error} ->
           {500, json_headers(), [jsx:encode(Error),"\n"]};
-        EncodedJson ->
-          Postprocessed = Module:postprocess(EncodedJson, Request),
+        TransformedResponse ->
+          Postprocessed = case erlang:function_exported(Module, postprocess, 2) of
+            true -> Module:postprocess(TransformedResponse, Request);
+            false -> TransformedResponse
+          end,
           {Code, json_headers(), [jsx:encode(Postprocessed),"\n"]}
       end;
     #{} when is_binary(Response) andalso (ContentType == text orelse ContentType == csv) ->
