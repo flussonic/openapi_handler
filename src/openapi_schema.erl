@@ -178,10 +178,13 @@ encode3(#{type := <<"object">>}, _Opts, #{} = Input, _Path) ->
   Input;
 
 encode3(#{type := <<"array">>, items := ItemSpec}, Opts, Input, Path) when is_list(Input) ->
+  NullableItems = maps:get(nullable, ItemSpec, undefined) == true,
   Count = length(Input),
   Encoded = lists:foldr(fun
     (_,{error, E}) ->
       {error, E};
+    (Null, Acc) when (Null == null orelse Null == undefined) andalso not NullableItems ->
+      {error, #{error => null_in_array_of_non_nullable, path => Path ++ [Count - length(Acc)], input => Null}};
     (Item, Acc) ->
       case encode3(ItemSpec, Opts, Item, Path ++ [Count - length(Acc)]) of
         {error, E} -> {error, E};

@@ -17,6 +17,7 @@ groups() ->
      query_string_parameters,
      multiple_file_upload,
      undefined_in_non_nullable,
+     null_in_array,
      erase_value_with_null,
      error_response,
      done_request
@@ -118,6 +119,20 @@ path_parameters(_) ->
 undefined_in_non_nullable(_) ->
   User = #{id := 2384572} = openapi_client:call(petstore_api,getUserByName,#{username => <<"John">>}),
   [id,username] = lists:sort(maps:keys(User)),
+  ok.
+
+null_in_array(_) ->
+  % When items are not nullable, passing null|undefined as a list element should return an error
+  {error, #{error := null_in_array_of_non_nullable}} = openapi_schema:process(
+                 [<<"a">>, undefined, <<"b">>],
+                 #{schema => #{type => <<"array">>,items => #{type => <<"string">>}}}),
+  {error, #{error := null_in_array_of_non_nullable}} = openapi_schema:process(
+                 [<<"a">>, null, <<"b">>],
+                 #{schema => #{type => <<"array">>,items => #{type => <<"string">>}}}),
+  % When array items are nullable, both null and undefined are transformed with no error
+  [<<"a">>, undefined, undefined, <<"b">>] = openapi_schema:process(
+                 [<<"a">>, null, undefined, <<"b">>],
+                 #{schema => #{type => <<"array">>,items => #{type => <<"string">>, nullable => true}}}),
   ok.
 
 
