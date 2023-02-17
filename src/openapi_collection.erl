@@ -179,7 +179,7 @@ encode_qs_api2([{select,Select}|Query]) ->
     Enc({Key,V}) when is_atom(Key) -> Enc({atom_to_binary(Key,latin1),V});
     Enc({Key,true}) -> [Key];
     Enc({Key,#{}=V}) ->
-      [ [<<Key/binary,".",K2/binary>> || K2 <- Enc(K1,V1)] || {K1,V1} <- maps:to_list(V)];
+      [ [<<Key/binary,".",K2/binary>> || K2 <- Enc(KV)] || KV <- maps:to_list(V)];
     Enc(#{} = KV) ->
       [Enc(KV_) || KV_ <- maps:to_list(KV)]
   end,

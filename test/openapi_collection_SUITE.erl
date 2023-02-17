@@ -24,7 +24,8 @@ groups() ->
       filter_is_not_null,
       next_cursor,
       prev_cursor,
-      encode_filter
+      encode_filter,
+      encode_select
   ]}
   ].
 
@@ -153,6 +154,13 @@ encode_filter(_) ->
 
   ok.
 
+encode_select(_) ->
+  <<"select=foo.bar">> = encode_qs(#{select => #{foo => #{bar => true}}}),
+
+  <<"select=", Select1/binary>> = encode_qs(#{select => #{moo => true, foo => #{bar => true, baz => true}}}),
+  [<<"foo.bar">>,<<"foo.baz">>,<<"moo">>] = lists:sort(binary:split(cow_qs:urldecode(Select1), <<",">>, [global])),
+
+  ok.
 
 
 
