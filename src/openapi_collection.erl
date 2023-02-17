@@ -467,9 +467,6 @@ maps_set(K,S,V) ->
 %  \______/  \______/ \__|        \____/ 
 
 
-sort_collection(undefined, Collection, _) ->
-  Collection;
-
 sort_collection(Key, Collection, Reversed) ->
   Collection1 = lists:sort(fun(S1,S2) ->
     Value1 = get_comparator(Key, S1, S2),
