@@ -1,0 +1,48 @@
+openapi: 3.1.0
+info:
+  title: Sample API
+  version: 0.0.1
+
+servers:
+  - url: http://api.example.com/v1
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+
+  securitySchemes:
+    BasicAuth:
+      type: http
+      scheme: basic
+
+security:
+  - BasicAuth: []
+
+paths:
+  /jsonArray:
+    post:
+      operationId: jsonArray
+      summary: Request in json, response in text/plain
+      responses:
+        '200':
+          description: successful operation
+          content:
+            text/plain:
+              schema:
+                type: array
+                properties:
+                  json_res:
+                    type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: integer
