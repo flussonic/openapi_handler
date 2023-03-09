@@ -16,6 +16,8 @@ groups() ->
      json_body_parameters,
      query_string_parameters,
      multiple_file_upload,
+     json_array_error,
+     json_array_ok,
      undefined_in_non_nullable,
      null_in_array,
      erase_value_with_null,
@@ -25,12 +27,12 @@ groups() ->
   ].
 
 -ifdef(legacy).
-start_http(Routes) ->
-  cowboy:start_http(petstore_api_server, 1, [{port, 0}],
+start_http(Routes, ApiName) ->
+  cowboy:start_http(ApiName, 1, [{port, 0}],
     [{env, [{dispatch, cowboy_router:compile([{'_', Routes}])}]}]).
 -else.
-start_http(Routes) ->
-  cowboy:start_clear(petstore_api_server, [{port, 0}],
+start_http(Routes, ApiName) ->
+  cowboy:start_clear(ApiName, [{port, 0}],
     #{env => #{dispatch => cowboy_router:compile([{'_', Routes}])}}).
 -endif.
 
@@ -40,21 +42,35 @@ init_per_suite(Config) ->
   {ok, _} = application:ensure_all_started(lhttpc),
 
   PetstorePath = filename:join(code:lib_dir(openapi_handler, test),"redocly-petstore.yaml"),
+  TestSchemaPath = filename:join(code:lib_dir(openapi_handler, test),"test_schema.yaml"),
   PetstoreRoutes = openapi_handler:routes(#{
     schema => PetstorePath,
     prefix => <<"/test/yml">>,
     name => petstore_server_api,
     module => fake_petstore
   }),
+  TestSchemaRoutes = openapi_handler:routes(#{
+    schema => TestSchemaPath,
+    prefix => <<"/test/yml">>,
+    name => test_schema_api,
+    module => test_schema_res
+  }),
   {ok, _} = application:ensure_all_started(cowboy),
-  start_http(PetstoreRoutes),
+  start_http(PetstoreRoutes, petstore_api_server),
+  start_http(TestSchemaRoutes, test_schema_server),
   PetstorePort = ranch:get_port(petstore_api_server),
+  TestSchemaPort = ranch:get_port(test_schema_server),
 
   PetstoreApi = openapi_client:load(#{
     schema_url => PetstorePath,
     url => <<"http://127.0.0.1:",(integer_to_binary(PetstorePort))/binary,"/test/yml">>
   }),
+  TestSchemaApi = openapi_client:load(#{
+    schema_url => TestSchemaPath,
+    url => <<"http://127.0.0.1:",(integer_to_binary(TestSchemaPort))/binary,"/test/yml">>
+  }),
   openapi_client:store(petstore_api, PetstoreApi),
+  openapi_client:store(test_schema_api, TestSchemaApi),
   Config.
 
 end_per_suite(Config) ->
@@ -218,6 +234,17 @@ multiple_file_upload(_) ->
     files => [{<<"upload_name1.txt">>,<<"11\n">>},{<<"file2.txt">>,<<"22\n">>}]
   },
   {response, 200, _, _Res} = fake_request(mu, <<"POST">>, <<"/uploadFiles">>, Req),
+  ok.
+
+json_array_error(_) ->
+  Array = <<"1,2,3">>,
+  {error,{400, #{error := <<"not_array">> }}} = openapi_client:call(test_schema_api, jsonArray, #{json_body => Array}),
+  ok.
+
+json_array_ok(_) ->
+  Array = [1,2,3],
+  Res = openapi_client:call(test_schema_api, jsonArray, #{json_body => Array}),
+  #{<<"json_res">> := <<"1">>} = jsx:decode(Res),
   ok.
 
 putFile(#{req := Req}) ->

@@ -1,2 +1,6 @@
 /_build
 /rebar.lock
+.idea/
+*.iml
+*.swp
+test-logs/

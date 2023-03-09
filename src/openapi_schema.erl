@@ -23,6 +23,7 @@ process(Input, #{} = Opts) ->
     (whole_schema,#{}) -> ok;
     (type,T) when is_atom(T) -> ok;
     (name,_) -> ok;
+    (array_convert,Flag) when Flag == true; Flag == false -> ok;
     (auto_convert,Flag) when Flag == true; Flag == false -> ok;
     (query,Flag) when Flag == true; Flag == false -> ok;
     (apply_defaults,Flag) when Flag == true; Flag == false -> ok;
@@ -34,9 +35,14 @@ process(Input, #{} = Opts) ->
     #{type := Type} -> #{'$ref' => <<"#/components/schemas/", (atom_to_binary(Type,latin1))/binary>>};
     _ -> error(not_specified_schema)
   end,
+  DefaultArrayConvert = case maps:get(auto_convert, Opts, true) of
+    true -> true;
+    false -> false
+  end,
   DefaultOpts = #{
     query => false,
     patch => false,
+    array_convert => DefaultArrayConvert,
     auto_convert => true
   },
   case encode3(Schema, maps:merge(DefaultOpts,Opts), Input, []) of
@@ -193,7 +199,7 @@ encode3(#{type := <<"array">>, items := ItemSpec}, Opts, Input, Path) when is_li
   end, [], Input),
   Encoded;
 
-encode3(#{type := <<"array">>} = Spec, #{auto_convert := true} = O, Input, Path) when is_binary(Input) ->
+encode3(#{type := <<"array">>} = Spec, #{auto_convert := true, array_convert := true} = O, Input, Path) when is_binary(Input) ->
   encode3(Spec, O, binary:split(Input, <<",">>, [global]), Path);
 
 encode3(#{type := <<"array">>, items := _ItemSpec}, _Opts, Input, Path) when not is_list(Input) ->
