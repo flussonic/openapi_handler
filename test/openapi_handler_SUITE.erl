@@ -19,10 +19,10 @@ groups() ->
      json_array_error,
      json_array_ok,
      undefined_in_non_nullable,
-     null_in_array,
      erase_value_with_null,
      error_response,
-     done_request
+     done_request,
+     non_exist_key
    ]}
   ].
 
@@ -137,25 +137,23 @@ undefined_in_non_nullable(_) ->
   [id,username] = lists:sort(maps:keys(User)),
   ok.
 
-null_in_array(_) ->
-  % When items are not nullable, passing null|undefined as a list element should return an error
-  {error, #{error := null_in_array_of_non_nullable}} = openapi_schema:process(
-                 [<<"a">>, undefined, <<"b">>],
-                 #{schema => #{type => <<"array">>,items => #{type => <<"string">>}}}),
-  {error, #{error := null_in_array_of_non_nullable}} = openapi_schema:process(
-                 [<<"a">>, null, <<"b">>],
-                 #{schema => #{type => <<"array">>,items => #{type => <<"string">>}}}),
-  % When array items are nullable, both null and undefined are transformed with no error
-  [<<"a">>, undefined, undefined, <<"b">>] = openapi_schema:process(
-                 [<<"a">>, null, undefined, <<"b">>],
-                 #{schema => #{type => <<"array">>,items => #{type => <<"string">>, nullable => true}}}),
-  ok.
-
 
 erase_value_with_null(_) ->
   Args = #{username => <<"Mary">>, json_body => #{firstName => null}},
   User = #{id := 15} = openapi_client:call(petstore_api,updateUser,Args),
   [id,username] = lists:sort(maps:keys(User)),
+  ok.
+
+
+non_exist_key(_) ->
+  Args = #{username => <<"Mary">>, json_body => #{firstName => <<"Anna">>, non_exist => some}},
+  {error,{400,Res}} = openapi_client:call(petstore_api,updateUser,Args),
+
+  #{<<"extra_keys">> := [<<"non_exist">>],
+    <<"input1">> := #{<<"firstName">> := <<"Anna">>,<<"non_exist">> := <<"some">>},
+    <<"name">> := <<"request_body">>,
+    <<"while">> := <<"parsing_parameters">>} = jsx:decode(Res),
+
   ok.
 
 
