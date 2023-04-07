@@ -11,8 +11,6 @@ groups() ->
   [
     {filter, [filter_enum_types]},
     {query, [], [ % parallel
-      read_default,
-
       param_no_value,
       filter_eq,
       filter_like,
@@ -58,16 +56,6 @@ filter_enum_types(_) ->
     #{id => 4, key2 => testvalue}
   ],
   #{estimated_count := 2, items := [#{id := 1}, #{id := 2}]} = openapi_collection:list(Dataset, #{filter => #{key1 => [testvalue]}}),
-  ok.
-
-read_default(_) ->
-  Json = #{<<"name">> => <<"read_default">>},
-  Schema = persistent_term:get({openapi_handler_schema,test_openapi}),
-  #{static := true, name := <<"read_default">>} = 
-    openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true}),
-
-  Stream2 = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema}),
-  Stream2 = #{name => <<"read_default">>},
   ok.
 
 

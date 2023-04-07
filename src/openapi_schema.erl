@@ -28,6 +28,7 @@ process(Input, #{} = Opts) ->
     (query,Flag) when Flag == true; Flag == false -> ok;
     (apply_defaults,Flag) when Flag == true; Flag == false -> ok;
     (patch,Flag) when Flag == true; Flag == false -> ok;
+    (extra_obj_key,Flag) when Flag == drop; Flag == error -> ok;
     (K,V) -> error({unknown_option,K,V})
   end, Opts),
   Schema = case Opts of
@@ -43,7 +44,8 @@ process(Input, #{} = Opts) ->
     query => false,
     patch => false,
     array_convert => DefaultArrayConvert,
-    auto_convert => true
+    auto_convert => true,
+    extra_obj_key => drop
   },
   case encode3(Schema, maps:merge(DefaultOpts,Opts), Input, []) of
     {error, Error} ->
@@ -87,11 +89,15 @@ encode3(#{allOf := Choices}, Opts, Input, Path) ->
       E;
     ({N,Choice}, Obj) ->
       case encode3(Choice, Opts, Input, Path ++ [N]) of
-        {error, E} -> {error, E};
-        #{} = Obj1 -> maps:merge(Obj, Obj1)
+        {error, #{extra_keys := _Extrakeys, encoded := Obj1}} ->
+          maps:merge(Obj, Obj1);  % у нас случай allOf => разбираем дальше
+        {error, E} ->
+          {error, E};
+        #{} = Obj1 ->
+          maps:merge(Obj, Obj1)
       end
   end, #{}, lists:zip(lists:seq(0,length(Choices)-1),Choices)),
-  Encoded;
+  check_extra_keys(Input, Encoded, Opts);
 
 encode3(#{anyOf := Choices}, Opts, Input, Path) ->
   Count = length(Choices),
@@ -100,6 +106,8 @@ encode3(#{anyOf := Choices}, Opts, Input, Path) ->
       {error, LastError};
     F([Choice|List], _) ->
       case encode3(Choice, Opts, Input, Path ++ [Count - length(List) - 1]) of
+        {error, #{extra_keys := _Extrakeys, encoded := Encoded}} -> % случай anyOf => пока что неподхлдящий вариант из возможных
+          Encoded;
         {error, Error} ->
           F(List, Error);
         EncodedItem ->
@@ -107,12 +115,15 @@ encode3(#{anyOf := Choices}, Opts, Input, Path) ->
       end
   end,
   Encoded = F(Choices, #{error => unmatched_anyOf, path => Path}),
-  Encoded;
+  check_extra_keys(Input, Encoded, Opts);
 
 encode3(#{oneOf := Choices}, Opts, Input, Path) ->
   EncodedList = lists:map(fun({Choice,I}) ->
     case encode3(Choice, Opts, Input, Path ++ [I]) of
-      {error, E} -> {error, E};
+      {error, #{extra_keys := _Extrakeys, encoded := Encoded}} -> % у нас случай oneOf => пока что мы взяли неподходящий вариант из возможных
+        Encoded;
+      {error, E} ->
+        {error, E};
       V -> {ok, V}
     end
   end, lists:zip(Choices,lists:seq(0,length(Choices)-1))),
@@ -178,7 +189,8 @@ encode3(#{type := <<"object">>, properties := Properties}, #{query := Query} = O
       end,
       UpdatedObj
   end, #{}, maps:merge(Artificial,Properties)),
-  Encoded;
+  check_extra_keys(Input, Encoded, Opts);
+
 
 encode3(#{type := <<"object">>}, _Opts, #{} = Input, _Path) ->
   Input;
@@ -315,3 +327,25 @@ encode_number(#{maximum := Max}, Input, Path) when Input > Max ->
 
 encode_number(_Schema, Input, _Path) ->
   Input.
+
+
+check_extra_keys(Input, Encoded, #{extra_obj_key := error} = _Opts) when is_map(Input) andalso is_map(Encoded) ->
+  Encoded1 = maps:fold(fun(K, V, AccIn) -> add_binary_keys(K, V, AccIn) end, Encoded, Encoded),
+  ExtraKeys = maps:keys(Input) -- maps:keys(Encoded1),
+  case ExtraKeys of
+    [_|_] -> {error, #{extra_keys => ExtraKeys, encoded => Encoded}};
+    _ -> Encoded
+  end;
+
+check_extra_keys(_Input, Encoded, _Opts) ->
+  Encoded.
+
+
+add_binary_keys(K, V, Encoded) when is_atom(K) ->
+  maps:merge(Encoded, #{atom_to_binary(K) => V});
+
+add_binary_keys(_K, _V, Encoded) ->
+  Encoded.
+
+
+
