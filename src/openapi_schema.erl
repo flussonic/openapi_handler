@@ -302,6 +302,19 @@ encode3(#{enum := Choices, type := <<"string">>}, #{auto_convert := Convert}, In
     false -> {error, #{unknown_enum_option => Input, path => Path, available => Choices}}
   end;
 
+encode3(#{pattern := RegExp, type := <<"string">>}, _, Input, Path) ->
+  case Input of
+    _ when is_binary(Input) ->
+      case re:run(Input, RegExp) of
+        {match, _} ->
+          Input;
+        nomatch ->
+          {error, #{error => nomatch_pattern, path => Path, input => Input}}
+      end;
+    _ ->
+      {error, #{error => not_string, path => Path, input => Input}}
+  end;
+
 encode3(#{type := <<"string">>}, _, Input, Path) ->
   case Input of
     _ when is_binary(Input) -> Input;
