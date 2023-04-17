@@ -12,7 +12,8 @@ groups() ->
       read_default,
       extra_keys_request,
       extra_keys_not_request,
-      null_in_array
+      null_in_array,
+      regexp_pattern
   ]}
   ].
 
@@ -68,5 +69,15 @@ null_in_array(_) ->
   [<<"a">>, undefined, undefined, <<"b">>] = openapi_schema:process(
                  [<<"a">>, null, undefined, <<"b">>],
                  #{schema => #{type => <<"array">>,items => #{type => <<"string">>, nullable => true}}}),
+  ok.
+
+
+regexp_pattern(_) ->
+
+  {error, #{error := nomatch_pattern}} =  openapi_schema:process(<<"123">>, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
+  {error, #{error := not_string}} =  openapi_schema:process(abc, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
+  <<"abc">> =  openapi_schema:process(<<"abc">>, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
+  abc =  openapi_schema:process(abc, #{schema => #{type => <<"string">>}}),
+
   ok.
 
