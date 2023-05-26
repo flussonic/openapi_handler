@@ -164,6 +164,7 @@ do_init(Req, Name, CowboyPath, Mod_cowboy_req, Compat) ->
           Accept = case Mod_cowboy_req:header(<<"accept">>, Req3, <<"application/json">>) of
             <<"text/plain",_/binary>> -> text;
             <<"text/csv",_/binary>> -> csv;
+            <<"application/openmetrics-text", _/binary>> -> openmetrics;
             _ -> json
           end,
           Ip = fetch_ip_address(Req, Mod_cowboy_req),
@@ -340,7 +341,7 @@ handle_response({ContentType, Code, Response}, #{responses := Responses, name :=
           end,
           {Code, json_headers(), [jsx:encode(Postprocessed),"\n"]}
       end;
-    #{} when is_binary(Response) andalso (ContentType == text orelse ContentType == csv) ->
+    #{} when is_binary(Response) andalso (ContentType == text orelse ContentType == csv orelse ContentType == openmetrics) ->
       {Code, text_headers(ContentType), Response};
     #{} ->
       {Code, json_headers(), [jsx:encode(Response),"\n"]}
@@ -387,7 +388,9 @@ json_headers() ->
 text_headers(text) ->
   (cors_headers())#{<<"Content-Type">> => <<"text/plain">>};
 text_headers(csv) ->
-  (cors_headers())#{<<"Content-Type">> => <<"text/csv">>}.
+  (cors_headers())#{<<"Content-Type">> => <<"text/csv">>};
+text_headers(openmetrics) ->
+  (cors_headers())#{<<"Content-Type">> => <<"application/openmetrics-text">>}.
 
 
 cors_headers() ->
@@ -457,7 +460,7 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, acc
       {json, Code, Response};
     #{} = Response ->
       {json, 200, Response};
-    <<_/binary>> = Response when Accept == text; Accept == csv ->
+    <<_/binary>> = Response when Accept == text; Accept == csv; Accept == openmetrics ->
       {Accept, 200, Response};
     {done, Req} ->
       {done, Req};
