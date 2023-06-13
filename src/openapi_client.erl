@@ -84,7 +84,7 @@ call(#{schema := Schema, uri := URI} = State, OperationId, Args0, Opts) when is_
               JSON = jsx:decode(Bin, [return_maps]),
               Response = openapi_schema:process(JSON, #{schema => ResponseSchema, whole_schema => Schema}),
               Response;
-            #{} when ResponseContentType == 'text/plain' orelse ResponseContentType == 'text/csv' orelse ResponseContentType == 'application/openmetrics-text'->
+            #{} when ResponseContentType == 'text/plain' orelse ResponseContentType == 'text/csv' ->
               Bin;
             undefined when Code == 204 ->
               ok;

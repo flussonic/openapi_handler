@@ -164,8 +164,9 @@ do_init(Req, Name, CowboyPath, Mod_cowboy_req, Compat) ->
           Accept = case Mod_cowboy_req:header(<<"accept">>, Req3, <<"application/json">>) of
             <<"text/plain",_/binary>> -> text;
             <<"text/csv",_/binary>> -> csv;
-            <<"application/openmetrics-text", _/binary>> -> openmetrics;
-            _ -> json
+            <<"*/*">> -> any;
+            <<"application/json">> -> json;
+            Other -> Other
           end,
           Ip = fetch_ip_address(Req, Mod_cowboy_req),
           Operation1 = Operation#{
@@ -328,23 +329,27 @@ do_handle(Req, #{module := Module, ip := Ip} = Request, Mod_cowboy_req) ->
 handle_response({done, Req}, _) ->
   {done, undefined, Req};
 
-handle_response({ContentType, Code, Response}, #{responses := Responses, name := Name, module := Module} = Request) ->
+handle_response({ContentType, Code, Response}, Request) ->
+  handle_response({ContentType, Code, #{}, Response}, Request);
+
+handle_response({ContentType_, Code, Headers, Response}, #{responses := Responses, name := Name, module := Module} = Request) ->
+  ContentType = check_accept_type(ContentType_, is_binary(Response)),
   case Responses of
-    #{Code := #{content := #{'application/json' := #{schema := Schema}}}} when ContentType == json ->
+    #{Code := #{content := #{'application/json' := #{schema := Schema}}}} when (ContentType == json orelse ContentType == <<"application/json">>) ->
       case openapi_schema:process(Response, #{schema => Schema, name => Name}) of
         {error, Error} ->
-          {500, json_headers(), [jsx:encode(Error),"\n"]};
+          {500, maps:merge(Headers, json_headers()), [jsx:encode(Error),"\n"]};
         TransformedResponse ->
           Postprocessed = case erlang:function_exported(Module, postprocess, 2) of
             true -> Module:postprocess(TransformedResponse, Request);
             false -> TransformedResponse
           end,
-          {Code, json_headers(), [jsx:encode(Postprocessed),"\n"]}
+          {Code, maps:merge(Headers, json_headers()), [jsx:encode(Postprocessed),"\n"]}
       end;
-    #{} when is_binary(Response) andalso (ContentType == text orelse ContentType == csv orelse ContentType == openmetrics) ->
-      {Code, text_headers(ContentType), Response};
+    #{} when is_binary(Response) ->
+      {Code, maps:merge(Headers, text_headers(ContentType)), Response};
     #{} ->
-      {Code, json_headers(), [jsx:encode(Response),"\n"]}
+      {Code, maps:merge(Headers, json_headers()), [jsx:encode(Response),"\n"]}
   end.
 
 
@@ -389,8 +394,8 @@ text_headers(text) ->
   (cors_headers())#{<<"Content-Type">> => <<"text/plain">>};
 text_headers(csv) ->
   (cors_headers())#{<<"Content-Type">> => <<"text/csv">>};
-text_headers(openmetrics) ->
-  (cors_headers())#{<<"Content-Type">> => <<"application/openmetrics-text">>}.
+text_headers(ContentType) ->
+  (cors_headers())#{<<"Content-Type">> => ContentType}.
 
 
 cors_headers() ->
@@ -444,7 +449,7 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, aut
       end
   end;
 
-handle_request(#{module := Module, operationId := OperationId, args := Args, accept := Accept, auth_context := AuthContext, ip := Ip}) ->
+handle_request(#{module := Module, operationId := OperationId, args := Args, accept := Accept, auth_context := AuthContext, ip := Ip, responses := Responses}) ->
   try Module:OperationId(Args#{auth_context => AuthContext, agent_ip => Ip}) of
     {error, badrequest} ->
       {json, 400, #{error => bad_request}};
@@ -460,10 +465,25 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, acc
       {json, Code, Response};
     #{} = Response ->
       {json, 200, Response};
-    <<_/binary>> = Response when Accept == text; Accept == csv; Accept == openmetrics ->
-      {Accept, 200, Response};
+    <<_/binary>> = Response ->
+      Accept1 = check_accept_type(Accept, true),
+      case is_binary_content_required(Responses, 200, Accept1) of
+        true -> {Accept1, 200, Response};
+        _ ->
+          ?LOG_ALERT(#{operationId => OperationId, invalid_response => Response, accept => Accept}),
+          {json, 500, #{error => invalid_response}}
+      end;
     {done, Req} ->
       {done, Req};
+    {raw, Code, #{} = Headers, <<_/binary>> = Body} ->
+      ContentType = find_content_type_header(Headers),
+      case (is_binary_content_required(Responses, Code, ContentType) == true) andalso
+           (Accept == any orelse nomatch =/= re:run(content_type_bin(Accept), ContentType)) of
+        true -> {ContentType, Code, Headers, Body};
+        false ->
+          ?LOG_ALERT(#{operationId => OperationId, invalid_response => {ok, Headers, Body}, accept => Accept}),
+          {json, 500, #{error => invalid_response}}
+      end;
     Else ->
       ?LOG_ALERT(#{operationId => OperationId, invalid_response => Else, accept => Accept}),
       {json, 500, #{error => invalid_response}}
@@ -478,6 +498,35 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, acc
       end
   end.
 
+
+is_binary_content_required(Responses, Code, ContentType_) ->
+  ContentType = binary_to_atom(content_type_bin(ContentType_), latin1),
+  case Responses of 
+    #{Code := #{content := #{ContentType := #{schema := #{type := <<"string">>}}}}} -> true;
+    #{Code := #{content := #{ContentType := #{schema := #{type := string}}}}} -> true;
+    #{Code := #{content := #{ContentType := #{schema := #{type := _Some}}}}} -> false;
+    _ -> undefined  % Для кода ответа Code нет типа контента ContentType
+  end.
+
+
+
+content_type_bin(text) -> <<"text/plain">>;
+content_type_bin(csv) -> <<"text/csv">>;
+content_type_bin(json) -> <<"application/json">>;
+content_type_bin(Bin) when is_binary(Bin) -> Bin.
+
+
+check_accept_type(any, false = _IsBodyBinary) -> json;
+check_accept_type(any, true = _IsBodyBinary) -> text;
+check_accept_type(Accept, _) -> Accept.
+
+
+find_content_type_header(Headers) when is_map(Headers)->
+  ContentTypes = [maps:get(HeaderName, Headers) || HeaderName <- maps:keys(Headers), string:equal(HeaderName, <<"Content-Type">>, true)],
+  case ContentTypes of
+    [ContentType|_] -> ContentType;
+    [] -> undefined
+  end.
 
 
 terminate(_,_,_) ->

@@ -22,7 +22,11 @@ groups() ->
      erase_value_with_null,
      error_response,
      done_request,
-     non_exist_key
+     non_exist_key,
+     check_xml_content_responses,
+     check_json_content_responses,
+     check_text_content_responses,
+     check_nonsense_content_responses
    ]}
   ].
 
@@ -261,3 +265,85 @@ error_response(_) ->
   {error, {501,#{error := <<"not_implemented">>}}} =
     openapi_client:call(petstore_api, getInventory, #{}),
   ok.
+
+
+% Methods valid_raw_response_value/2 and valid_simple_response_value/2 are helpfull methods for testing handling responses with preassigned content types.
+% Openapi_handler checks compatibility of content type and of 'Accept' value.
+valid_raw_response_value(<<"random/nonsense">> = _ContentType, _Accept) ->
+  % Content type  for /headersContentType at test_schema.yaml.
+  % Error should be generated.
+  {error,{500,#{error => <<"invalid_response">>}}};
+valid_raw_response_value(<<"application/json">>  = _ContentType, _Accept) ->
+  % Content type <<"application/json">> does not suggest binary body.
+  % Error should be generated.
+  {error,{500,#{error => <<"invalid_response">>}}};
+valid_raw_response_value(ContentType, <<"*/*">> = _Accept) ->
+  content(ContentType);
+valid_raw_response_value(ContentType, Accept) when ContentType == Accept ->
+  content(ContentType);
+valid_raw_response_value(_, _) ->
+  {error,{500,#{error => <<"invalid_response">>}}}.
+
+
+% For json simple response
+valid_simple_response_value(<<"application/json">> = ContentType, _Accept) ->
+  content(ContentType);
+% For binary simple response
+valid_simple_response_value(_ContentType, <<"application/json">> = _Accept) ->
+  {error,{500,#{error => <<"invalid_response">>}}};
+valid_simple_response_value(_ContentType, <<"random/nonsense">> = _Accept) ->
+  {error,{500,#{error => <<"invalid_response">>}}}; % <<"random/nonsense">> is not described
+valid_simple_response_value(ContentType, _Accept) ->
+  content(ContentType).
+
+
+
+content(ContentType) ->
+  maps:get(ContentType, #{<<"text/plain">> => <<"OK">>,
+    <<"application/json">> => #{<<"result">> => <<"OK">>},
+    <<"application/xml">> => <<"<Message> OK </Message>">>,
+    <<"random/nonsense">> => <<"Some">>
+  }).
+
+
+accept_type_list() ->
+  [<<"text/plain">>, <<"*/*">>, <<"application/xml">>, <<"application/json">>, <<"random/nonsense">>].
+
+
+get_response(ContentType, Accept) ->
+  openapi_client:call(test_schema_api,headersContentType,#{content_type => ContentType, accept => Accept}).
+get_response(simple, ContentType, Accept) ->
+  openapi_client:call(test_schema_api,headersContentType,#{response_view => simple, content_type => ContentType, accept => Accept}).
+
+
+check_xml_content_responses(_) ->
+  lists:foldl(fun(Accept, _) -> 
+    true = valid_raw_response_value(<<"application/xml">>, Accept) == get_response(<<"application/xml">>, Accept),
+    true = valid_simple_response_value(<<"application/xml">>, Accept) == get_response(simple, <<"application/xml">>, Accept) end,
+  [], accept_type_list()),
+  ok.
+
+
+check_json_content_responses(_) ->
+  lists:foldl(fun(Accept, _) ->
+    true = valid_raw_response_value(<<"application/json">>, Accept) == get_response(<<"application/json">>, Accept),
+    true = valid_simple_response_value(<<"application/json">>, Accept) == get_response(simple, <<"application/json">>, Accept) end,
+  [], accept_type_list()),
+  ok.
+
+
+check_text_content_responses(_) ->
+  lists:foldl(fun(Accept, _) ->
+    true = valid_raw_response_value(<<"text/plain">>, Accept) == get_response(<<"text/plain">>, Accept),
+    true = valid_simple_response_value(<<"text/plain">>, Accept) == get_response(simple, <<"text/plain">>, Accept) end,
+  [], accept_type_list()),
+  ok.
+
+
+check_nonsense_content_responses(_) ->
+  lists:foldl(fun(Accept, _) ->
+    true = valid_raw_response_value(<<"random/nonsense">>, Accept) == get_response(<<"random/nonsense">>, Accept),
+    true = valid_simple_response_value(<<"random/nonsense">>, Accept) == get_response(simple, <<"random/nonsense">>, Accept) end,
+  [], accept_type_list()),
+  ok.
+

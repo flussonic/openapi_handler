@@ -64,7 +64,8 @@ Valid callback return values are:
   * `{error, badrequest | enoent | unavailable}` -- shortcuts for statuses 400, 404, 503 accordingly with minimal status description in body
   * `ok` -- status 204 with no body
   * `#{} = RespObject` -- shortcut to `{json, 200, RespObject}`
-  * `<<_/binary>>` (valid only for `text` and `csv` content) -- status 200 and exactly this body
+  * `<<_/binary>>` -- status 200 and exactly this body
+  * `{raw, Code, #{} = Headers, <<_/binary>> = Body}` -- the server will respond with given status Code, Headers and Body, Headers MUST include 'Content-Type' header
 
 ## Make sure return values conform to your schema
 If your schema describes `responses`, the callback return value is validated against response schema.  

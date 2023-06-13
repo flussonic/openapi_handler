@@ -46,3 +46,56 @@ paths:
               type: array
               items:
                 type: integer
+
+  /headersContentType:
+    get:
+      summary: Response with preassigned content type
+      operationId: headersContentType
+      parameters:
+        - name: response_view
+          in: query
+          description: |
+            If the value is "simple", the response without headers, with only content will be sent from the server.
+            In a case of any other value or in a case of absence of this parameter the response with headers will be sent from the server.
+          required: false
+          schema:
+            type: string
+            examples:
+              "simple"
+        - name: content_type
+          in: query
+          description: The type of response content
+          required: true
+          schema:
+            type: string
+            oneOf:
+            - const: "application/xml"
+            - const: "application/json"
+            - const: "text/plain"
+            - const: "random/nonsense"
+        - name: Accept
+          description: Accept header value
+          required: true
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 
+          content:
+            application/json:
+              schema:
+                type: object
+              examples:
+                '{"result": "OK"}'
+            application/xml:
+              schema:
+                type: string
+              examples:
+                '<Message> OK </Message>'
+            text/plain:
+              schema:
+                type: string
+              examples:
+                'OK'
+
