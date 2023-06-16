@@ -407,7 +407,7 @@ cors_headers() ->
   }.
 
 
-handle_request(#{module := Module, operationId := OperationId, args := Args, auth_context := AuthContext,
+handle_request(#{module := Module, operationId := OperationId, args := Args, accept := Accept, auth_context := AuthContext, responses := Responses,
   'x-collection-name' := CollectionName} = OpenAPI) ->
   #{raw_qs := Qs} = Args,
   Type = maps:get('x-collection-type', OpenAPI),
@@ -428,10 +428,13 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, aut
           {json, Code, Response};
         {error, {Code, #{} = Response}} when is_integer(Code) ->
           {json, Code, Response};
-        #{CollectionName := FullList} when is_list(FullList) ->
+        #{CollectionName := FullList} = R0 when is_list(FullList) ->
           T2 = erlang:system_time(milli_seconds),
+          Delta = maps:without([CollectionName], R0),
           R = openapi_collection:list(FullList, Query#{timing => #{load => T2-T1}, collection => CollectionName}),
-          {json, 200, R}
+          {json, 200, maps:merge(Delta, R)};
+        {raw, Code, #{} = Headers, <<_/binary>> = Body} ->
+          handle_raw_response(Accept, OperationId, Responses, {raw, Code, Headers, Body})
       catch
         error:undef:ST ->
           case ST of
@@ -476,14 +479,7 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, acc
     {done, Req} ->
       {done, Req};
     {raw, Code, #{} = Headers, <<_/binary>> = Body} ->
-      ContentType = find_content_type_header(Headers),
-      case (is_binary_content_required(Responses, Code, ContentType) == true) andalso
-           (Accept == any orelse nomatch =/= re:run(content_type_bin(Accept), ContentType)) of
-        true -> {ContentType, Code, Headers, Body};
-        false ->
-          ?LOG_ALERT(#{operationId => OperationId, invalid_response => {ok, Headers, Body}, accept => Accept}),
-          {json, 500, #{error => invalid_response}}
-      end;
+      handle_raw_response(Accept, OperationId, Responses, {raw, Code, Headers, Body});
     Else ->
       ?LOG_ALERT(#{operationId => OperationId, invalid_response => Else, accept => Accept}),
       {json, 500, #{error => invalid_response}}
@@ -508,6 +504,16 @@ is_binary_content_required(Responses, Code, ContentType_) ->
     _ -> undefined  % Для кода ответа Code нет типа контента ContentType
   end.
 
+
+handle_raw_response(Accept, OperationId, Responses, {raw, Code, Headers, Body}) when is_binary(Body) ->
+  ContentType = find_content_type_header(Headers),
+  case (is_binary_content_required(Responses, Code, ContentType) == true) andalso
+       (Accept == any orelse nomatch =/= re:run(content_type_bin(Accept), ContentType)) of
+    true -> {ContentType, Code, Headers, Body};
+    false ->
+      ?LOG_ALERT(#{operationId => OperationId, invalid_response => {raw, Code, Headers, Body}, accept => Accept}),
+      {json, 500, #{error => invalid_response}}
+  end.
 
 
 content_type_bin(text) -> <<"text/plain">>;
