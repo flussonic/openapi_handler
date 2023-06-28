@@ -28,8 +28,9 @@ routes(#{schema := SchemaPath, module := Module, name := Name, prefix := Prefix}
     persistent_term:put({openapi_handler_route,Name,CowboyPath}, PathSpec1#{name => Name, module => Module}),
     {<<Prefix/binary, CowboyPath/binary>>, HandlerModule, {Name,CowboyPath}}
   end, maps:to_list(Paths)),
-  % Нужно отсортировать так, чтобы символ ':', это противоречит стандартной сортировке
-  % поэтому отсоритируем как есть и развернем, тогда у нас ':' точно будет в ожидаемом месте
+  % After sorting, bindings (starting with ":") must be after constant path segments, so generic routes only work after specific ones.
+  % E.g. "/api/users/admin" must be before "/api/users/:id"
+  % Thus special sorting function
   routes_sort(Routes).
 
 choose_module() ->
@@ -68,10 +69,10 @@ prepare_operation_fm(_, #{}, _) ->
   false.
 
 routes_sort(Routes) ->
-  lists:reverse(lists:sort(fun path_sort/2, Routes)).
+  lists:sort(fun path_sort/2, Routes).
 
 path_sort({Path1,_,_},{Path2,_,_}) ->
-  Path1 =< Path2.
+  Path1 >= Path2.
 
 
 
@@ -501,7 +502,7 @@ is_binary_content_required(Responses, Code, ContentType_) ->
     #{Code := #{content := #{ContentType := #{schema := #{type := <<"string">>}}}}} -> true;
     #{Code := #{content := #{ContentType := #{schema := #{type := string}}}}} -> true;
     #{Code := #{content := #{ContentType := #{schema := #{type := _Some}}}}} -> false;
-    _ -> undefined  % Для кода ответа Code нет типа контента ContentType
+    _ -> undefined  % No response with given ContentType is described for this Code
   end.
 
 
