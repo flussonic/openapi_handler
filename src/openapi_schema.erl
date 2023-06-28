@@ -90,7 +90,7 @@ encode3(#{allOf := Choices}, Opts, Input, Path) ->
     ({N,Choice}, Obj) ->
       case encode3(Choice, Opts, Input, Path ++ [N]) of
         {error, #{extra_keys := _Extrakeys, encoded := Obj1}} ->
-          maps:merge(Obj, Obj1);  % у нас случай allOf => разбираем дальше
+          maps:merge(Obj, Obj1);  % keep processing, all choices have to be processed for allOf
         {error, E} ->
           {error, E};
         #{} = Obj1 ->
@@ -106,7 +106,8 @@ encode3(#{anyOf := Choices}, Opts, Input, Path) ->
       {error, LastError};
     F([Choice|List], _) ->
       case encode3(Choice, Opts, Input, Path ++ [Count - length(List) - 1]) of
-        {error, #{extra_keys := _Extrakeys, encoded := Encoded}} -> % случай anyOf => пока что неподхлдящий вариант из возможных
+        {error, #{extra_keys := _Extrakeys, encoded := Encoded}} ->
+          % TODO: check anyOf semantics, add explicit tests for that
           Encoded;
         {error, Error} ->
           F(List, Error);
@@ -117,17 +118,38 @@ encode3(#{anyOf := Choices}, Opts, Input, Path) ->
   Encoded = F(Choices, #{error => unmatched_anyOf, path => Path}),
   check_extra_keys(Input, Encoded, Opts);
 
+encode3(#{oneOf := _, discriminator := #{propertyName := DKey, mapping := DMap}}, Opts, Input, Path) ->
+  % If possible, get the discriminator value as atom (for lookup in mapping)
+  ADKey = binary_to_atom(DKey),
+  ADvalue = case Input of
+    #{DKey := DValue} when is_atom(DValue) -> DValue;
+    #{ADKey := DValue} when is_atom(DValue) -> DValue;
+    #{DKey := DValue} when is_binary(DValue) -> try binary_to_existing_atom(DValue) catch error:badarg -> DValue end;
+    #{ADKey := DValue} when is_binary(DValue) -> try binary_to_existing_atom(DValue) catch error:badarg -> DValue end;
+    #{} -> undefined
+  end,
+  DChoice = maps:get(ADvalue, DMap, undefined),
+  case {ADvalue, DChoice} of
+    {undefined, _} ->
+      {error, #{error => discriminator_missing, path => Path, propertyName => DKey}};
+    {_, undefined} ->
+      {error, #{error => discriminator_unmapped, path => Path, propertyName => DKey, value => ADvalue}};
+    {_, _} ->
+      encode3(#{'$ref' => DChoice}, Opts, Input, Path)
+  end;
+
 encode3(#{oneOf := Choices}, Opts, Input, Path) ->
   EncodedList = lists:map(fun({Choice,I}) ->
     case encode3(Choice, Opts, Input, Path ++ [I]) of
-      {error, #{extra_keys := _Extrakeys, encoded := Encoded}} -> % у нас случай oneOf => пока что мы взяли неподходящий вариант из возможных
+      {error, #{extra_keys := _Extrakeys, encoded := Encoded}} ->
+        % Wrong oneOf choice. Will try other ones and check results
         Encoded;
       {error, E} ->
         {error, E};
       V -> {ok, V}
     end
   end, lists:zip(Choices,lists:seq(0,length(Choices)-1))),
-  %% Может получится несколько валидных ответов, выбираем непустой
+  %% If there are several valid results, choose non-empty one
   case [M || {ok, #{} = M} <- EncodedList, map_size(M) > 0] of
     [Encoded|_] -> Encoded;
     _ ->

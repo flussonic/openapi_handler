@@ -363,14 +363,15 @@ to_b2(Atom) when is_atom(Atom) -> atom_to_binary(Atom,latin1);
 to_b2(V) -> V.
 
 %
-% Здесь делается ещё одна хитрость:  
-% stats.bitrate_gt=187 превращается в stats => #{bitrate => #{'$gt' => 187}}
+% One more trick here:
+% "stats.bitrate_gt=187" is converted to  stats => #{bitrate => #{'$gt' => 187}}
 %
-% мы это развертываем в [stats, bitrate] => #{'$gt' => 187} и спускаемся вниз
+% We unwind it into  [stats, bitrate] => #{'$gt' => 187}  and iterate over the list
 %
-% Однако теперь надо придумать протокол для доступа по списку
-% Ещё есть
-% stats.last_dts_ago_gt=0&stats.last_dts_ago_lt=1000 превращается в stats => #{bitrate => #{'$gt' => 0,'lt' => 1000}}
+% TODO: protocol for accessing lists
+%
+% One more case:
+% stats.last_dts_ago_gt=0&stats.last_dts_ago_lt=1000  is transformed to  stats => #{last_dts_ago => #{'$gt' => 0,'lt' => 1000}}
 %
 
 unwrap_kv(#{} = Filter) ->
@@ -489,7 +490,7 @@ get_comparator([{Key, desc}|List], S1, S2) ->
   [get_comparator_key(Key,S2)| get_comparator(List, S1, S2)].
 
 
-% Явно сортируем типы
+% Explicit type sort
 get_comparator_key(Key, S) ->
   case getkey(Key, S) of
     undefined -> {0,undefined};

@@ -71,7 +71,7 @@ read_multipart_files(Req) ->
   % This is a copy of openapi_handler:read_multipart_files/1 with
   % cowboy_req:part/1, cowboy_req:part_body/1 and different number of cow_multipart:form_data/1
   % results.
-  % Despite other methods are сowboy_req methods in this module, it is much simpler to keep such
+  % Despite other methods are cowboy_req methods in this module, it is much simpler to keep such
   % method instead of multiple call mocks to read_part/1 and read_part_body/1 in tests
   do_read_multipart_files(Req, []).
 
