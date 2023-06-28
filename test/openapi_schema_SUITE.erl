@@ -13,6 +13,7 @@ groups() ->
       extra_keys_request,
       extra_keys_not_request,
       null_in_array,
+      discriminator,
       regexp_pattern
   ]}
   ].
@@ -69,6 +70,31 @@ null_in_array(_) ->
   [<<"a">>, undefined, undefined, <<"b">>] = openapi_schema:process(
                  [<<"a">>, null, undefined, <<"b">>],
                  #{schema => #{type => <<"array">>,items => #{type => <<"string">>, nullable => true}}}),
+  ok.
+
+
+discriminator(_) ->
+  FooType = #{type => <<"object">>, properties => #{dis => #{type => <<"string">>}, k1 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}}},
+  BarType = #{type => <<"object">>, properties => #{dis => #{type => <<"string">>}, k2 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}}},
+  DType = #{
+    oneOf => [#{'$ref' => <<"#/components/schemas/foo_t">>}, #{'$ref' => <<"#/components/schemas/bar_t">>}],
+    discriminator => #{propertyName => <<"dis">>, mapping => #{foo => <<"#/components/schemas/foo_t">>, bar => <<"#/components/schemas/bar_t">>}}},
+  DSchema = #{components => #{schemas => #{discr_t => DType, foo_t => FooType, bar_t => BarType}}},
+
+  %% Match type by discriminator
+  Foo1 = openapi_schema:process(#{dis => <<"foo">>, k1 => 12, k2 => 34}, #{type => discr_t, whole_schema => DSchema}),
+  [dis, k1] = lists:sort(maps:keys(Foo1)), % k2 is deleted because it is valid only for bar_t
+  Foo2 = openapi_schema:process(#{<<"dis">> => <<"foo">>, <<"k1">> => 12, <<"k2">> => 34}, #{type => discr_t, whole_schema => DSchema}),
+  [dis, k1] = lists:sort(maps:keys(Foo2)), % binary keys work well too
+  Foo3 = openapi_schema:process(#{dis => foo, k1 => 12, k2 => 34}, #{type => discr_t, whole_schema => DSchema}),
+  [dis, k1] = lists:sort(maps:keys(Foo3)), % atom discriminator value works well
+  Bar1 = openapi_schema:process(#{dis => <<"bar">>, k1 => 12, k2 => 34}, #{type => discr_t, whole_schema => DSchema}),
+  [dis, k2] = lists:sort(maps:keys(Bar1)), % k1 is deleted because it is valid only for foo_t
+
+  %% Missing or invalid discriminator should lead an error
+  {error, #{error := discriminator_missing}} = openapi_schema:process(#{k1 => 12, k2 => 34}, #{type => discr_t, whole_schema => DSchema}),
+  {error, #{error := discriminator_unmapped}} = openapi_schema:process(#{dis => <<"nonsense">>, k1 => 12, k2 => 34}, #{type => discr_t, whole_schema => DSchema}),
+
   ok.
 
 

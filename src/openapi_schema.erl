@@ -117,6 +117,26 @@ encode3(#{anyOf := Choices}, Opts, Input, Path) ->
   Encoded = F(Choices, #{error => unmatched_anyOf, path => Path}),
   check_extra_keys(Input, Encoded, Opts);
 
+encode3(#{oneOf := _, discriminator := #{propertyName := DKey, mapping := DMap}}, Opts, Input, Path) ->
+  % If possible, get the discriminator value as atom (for lookup in mapping)
+  ADKey = binary_to_atom(DKey),
+  ADvalue = case Input of
+    #{DKey := DValue} when is_atom(DValue) -> DValue;
+    #{ADKey := DValue} when is_atom(DValue) -> DValue;
+    #{DKey := DValue} when is_binary(DValue) -> try binary_to_existing_atom(DValue) catch error:badarg -> DValue end;
+    #{ADKey := DValue} when is_binary(DValue) -> try binary_to_existing_atom(DValue) catch error:badarg -> DValue end;
+    #{} -> undefined
+  end,
+  DChoice = maps:get(ADvalue, DMap, undefined),
+  case {ADvalue, DChoice} of
+    {undefined, _} ->
+      {error, #{error => discriminator_missing, path => Path, propertyName => DKey}};
+    {_, undefined} ->
+      {error, #{error => discriminator_unmapped, path => Path, propertyName => DKey, value => ADvalue}};
+    {_, _} ->
+      encode3(#{'$ref' => DChoice}, Opts, Input, Path)
+  end;
+
 encode3(#{oneOf := Choices}, Opts, Input, Path) ->
   EncodedList = lists:map(fun({Choice,I}) ->
     case encode3(Choice, Opts, Input, Path ++ [I]) of
