@@ -4,6 +4,9 @@
 authorize(_) ->
   #{auth => yes_please}.
 
+log_call(CallInfo) ->
+  (whereis(test_schema_log_call_server) /= undefined) andalso (test_schema_log_call_server ! {log_call, ?MODULE, CallInfo}).
+
 jsonArray(#{json_body := [1,2,3]} = Req) ->
   ct:pal("Req: ~p", [Req]),
   #{json_res => <<"1">>}.

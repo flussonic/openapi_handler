@@ -311,19 +311,30 @@ read_multipart_file(Req0, Bin) ->
 handle(Req, #{} = Request) ->
   do_handle(Req, #{} = Request, cowboy_req).
 
-do_handle(Req, #{module := Module, ip := Ip} = Request, Mod_cowboy_req) ->
+do_handle(Req, #{module := _, ip := _} = Request, Mod_cowboy_req) ->
   T1 = erlang:system_time(micro_seconds),
   Response = handle_request(Request),
   % T2 = erlang:system_time(micro_seconds),
   {Code2, Headers, PreparedResponse} = handle_response(Response, Request),
   T3 = erlang:system_time(micro_seconds),
-  catch Module:log_call(Request#{code => Code2, time => T3-T1, ip => Ip}),
+  catch do_log_call(Code2, Headers, PreparedResponse, Request#{time => T3-T1}, Mod_cowboy_req),
   Req2 = case Code2 of
     done -> PreparedResponse; % HACK to bypass request here
     204 -> Mod_cowboy_req:reply(Code2, cors_headers(), [], Req);
     _ -> gzip_and_reply(Code2, Headers, PreparedResponse, Req, Mod_cowboy_req)
   end,
   {ok, Req2, undefined}.
+
+% Add some response info and log the handled api call
+do_log_call(done, _Headers, PreparedResponse, #{module := Module} = Request, Mod_cowboy_req) ->
+  ContentType = catch Mod_cowboy_req:resp_header(<<"content-type">>, PreparedResponse, undefined),
+  ContentLength = catch Mod_cowboy_req:resp_header(<<"content-length">>, PreparedResponse, undefined),
+  % Cowboy does not store sent status code
+  Module:log_call(Request#{code => undefined, content_type => ContentType, content_length => ContentLength});
+do_log_call(Status, Headers, PreparedResponse, #{module := Module} = Request, _Mod_cowboy_req) ->
+  ContentType = maps:get(<<"Content-Type">>, Headers, undefined),
+  ContentLength = iolist_size(PreparedResponse),
+  Module:log_call(Request#{code => Status, content_type => ContentType, content_length => ContentLength}).
 
 % User code itself works with the request and changes its state,
 % for example, when receiving a large request body
