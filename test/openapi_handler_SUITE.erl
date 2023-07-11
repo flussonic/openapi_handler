@@ -114,6 +114,8 @@ json_routes(_) ->
 
 authorize(_) -> #{auth => yes_please}.
 postprocess(JSON, _) -> JSON.
+log_call(CallInfo) ->
+  (whereis(openapi_handler_SUITE_log_call_server) /= undefined) andalso (openapi_handler_SUITE_log_call_server ! {log_call, ?MODULE, CallInfo}).
 
 
 trivial(_) ->
@@ -202,6 +204,8 @@ headers(Req) -> maps:get(headers, Req, #{}).
 header(Name, Req) -> header(Name, Req, undefined).
 header(Name, Req, Default) -> maps:get(Name, headers(Req), Default).
 parse_header(<<"accept-encoding">>, Req) -> maps:get(accept_encoding, Req, undefined).
+resp_header(H, Req) -> resp_header(H, Req, undefined).
+resp_header(H, Req, Default) -> maps:get(H, maps:get(resp_headers, Req, #{}), Default).
 
 read_body(#{streamid := StreamId} = Req) ->
   case get(last_body_read) of
@@ -217,7 +221,7 @@ reply(Code, Headers, Body, #{tester := Tester, streamid := StreamId} = Req) ->
     _ -> put(last_response_sent, StreamId)
   end,
   Tester ! {StreamId, self(), {response, Code, Headers, Body}},
-  Req.
+  Req#{resp_headers => Headers, resp_body => Body}.
 
 
 read_multipart_files(Req) -> {ok, maps:get(files, Req, []), Req}.
@@ -250,14 +254,22 @@ json_array_ok(_) ->
   ok.
 
 putFile(#{req := Req}) ->
-  File = #{size => 100},
-  {done, Req#{body => jsx:encode(File)}}.
+  Body = <<"{\"size\":100}">>,
+  Req1 = reply(200, #{<<"content-length">> => byte_size(Body), <<"content-type">> => <<"application/json">>}, Body, Req),
+  {done, Req1}.
 
 done_request(_) ->
+  register(openapi_handler_SUITE_log_call_server, self()),
   SchemaPath = code:lib_dir(openapi_handler, test) ++ "/done_req.yaml",
   Routes = openapi_handler:routes(#{schema => SchemaPath, module => ?MODULE, name => put, prefix => <<"/test/put">>}),
   [{<<"/test/put/putFile">>, _, {put, <<"/putFile">>}}] = Routes,
   _ = fake_request(put, <<"PUT">>, <<"/putFile">>, #{}),
+  receive
+    {log_call, ?MODULE, #{operationId := putFile} = CallInfo} ->
+      #{content_type := <<"application/json">>, content_length := 12} = CallInfo
+  after 1000 -> error(no_log_call)
+  end,
+  unregister(openapi_handler_SUITE_log_call_server),
   ok.
 
 
@@ -310,10 +322,29 @@ accept_type_list() ->
   [<<"text/plain">>, <<"*/*">>, <<"application/xml">>, <<"application/json">>, <<"random/nonsense">>].
 
 
-get_response(ContentType, Accept) ->
-  openapi_client:call(test_schema_api,headersContentType,#{content_type => ContentType, accept => Accept}).
-get_response(simple, ContentType, Accept) ->
-  openapi_client:call(test_schema_api,headersContentType,#{response_view => simple, content_type => ContentType, accept => Accept}).
+get_response(ContentType, Accept) -> do_get_response(#{content_type => ContentType, accept => Accept}).
+get_response(simple, ContentType, Accept) -> do_get_response(#{response_view => simple, content_type => ContentType, accept => Accept}).
+
+do_get_response(#{content_type := ContentType} = CallParams) ->
+  RespView = maps:get(response_view, CallParams, undefined),
+  register(test_schema_log_call_server, self()),
+  Result = openapi_client:call(test_schema_api,headersContentType,CallParams),
+  receive
+    {log_call, test_schema_res, #{code := OK} = CallInfo} when OK >= 200, OK < 300, RespView /= simple ->
+      % On successful answer, content should be as callback returned
+      #{content_type := ContentType, content_length := CLen} = CallInfo,
+      true = (CLen > 0);
+    {log_call, test_schema_res, #{code := OK} = CallInfo} when OK >= 200, OK < 300, RespView == simple ->
+      #{content_type := _, content_length := CLen} = CallInfo,
+      true = (CLen > 0);
+    {log_call, test_schema_res, CallInfo} ->
+      % Some error. It should have JSON description
+      #{content_type := <<"application/json">>, content_length := CLen} = CallInfo,
+      true = (CLen > 0)
+  after 1000 -> error(no_log_call)
+  end,
+  unregister(test_schema_log_call_server),
+  Result.
 
 
 check_xml_content_responses(_) ->
