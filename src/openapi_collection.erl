@@ -5,15 +5,16 @@
 -export([qs/1]).
 -export([list/2]).
 -export([calculate_cursors/5, unwrap_kv/1]).
+-export([filter_collection/2]).
 
 
 
 add_defaults(Query0) ->
   Sort1 = maps:get(sort, Query0, []),
   ImplicitSort = {['$position'],asc},
-  Sort2 = case lists:member(ImplicitSort, Sort1) of
-    true -> Sort1;
-    false -> Sort1 ++ [ImplicitSort]
+  Sort2 = case Sort1 of
+    [] -> [ImplicitSort];
+    _ -> Sort1
   end,
   Query0#{sort => Sort2}.
 

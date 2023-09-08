@@ -21,6 +21,7 @@ groups() ->
       filter_gt_lt,
       filter_is_not_null,
       next_cursor,
+      next_cursor_with_sort_doesnt_have_position,
       prev_cursor,
       encode_filter,
       encode_select
@@ -116,6 +117,12 @@ next_cursor(_) ->
   #{next := <<Next1/binary>>, items := [#{name := <<"c/01">>}|_]} = q([{<<"limit">>,<<"3">>},{<<"sort">>,<<"name">>}]),
   #{next := <<Next2/binary>>, items := [#{name := <<"c/04">>}|_]} = q([{<<"limit">>,<<"3">>},{<<"sort">>,<<"name">>},{<<"cursor">>,Next1}]),
   #{next := undefined, items := [#{name := <<"c/07">>}|_]} = q([{<<"limit">>,<<"3">>},{<<"sort">>,<<"name">>},{<<"cursor">>,Next2}]),
+  ok.
+
+next_cursor_with_sort_doesnt_have_position(_) ->
+  #{next := <<Next/binary>>, items := [#{name := <<"c/01">>}|_]} = q([{<<"limit">>,<<"3">>},{<<"sort">>,<<"name">>}]),
+  Q = cow_qs:parse_qs(base64:decode(Next)),
+  [{<<"name_gt">>,<<"c/03">>}] = Q,
   ok.
 
 prev_cursor(_) ->
