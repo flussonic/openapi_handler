@@ -216,6 +216,11 @@ read_body(#{streamid := StreamId} = Req) ->
   {ok, Body, Req}.
 
 reply(Code, Headers, Body, #{tester := Tester, streamid := StreamId} = Req) ->
+  % Ensure all headers are lowercase
+  NonLowercaseHeaders = maps:filter(fun(K, _) -> string:lowercase(iolist_to_binary(K)) /= K end, Headers),
+  ZeroMap = #{},
+  ZeroMap = NonLowercaseHeaders,
+
   case get(last_response_sent) of
     StreamId -> ct:print("response_sent_twice ~0p", [StreamId]), error(response_sent_twice);
     _ -> put(last_response_sent, StreamId)
