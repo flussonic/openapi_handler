@@ -332,7 +332,7 @@ do_log_call(done, _Headers, PreparedResponse, #{module := Module} = Request, Mod
   % Cowboy does not store sent status code
   Module:log_call(Request#{code => undefined, content_type => ContentType, content_length => ContentLength});
 do_log_call(Status, Headers, PreparedResponse, #{module := Module} = Request, _Mod_cowboy_req) ->
-  ContentType = maps:get(<<"Content-Type">>, Headers, undefined),
+  ContentType = maps:get(<<"content-type">>, Headers, undefined),
   ContentLength = iolist_size(PreparedResponse),
   Module:log_call(Request#{code => Status, content_type => ContentType, content_length => ContentLength}).
 
@@ -375,7 +375,7 @@ gzip_and_reply(Code, Headers, Body, Req, Mod_cowboy_req) when Code >= 200 andals
   case Gzipping of
     true when is_map(Headers) ->
       Body1 = zlib:gzip(Body),
-      Headers1 = Headers#{<<"Content-Encoding">> => <<"gzip">>},
+      Headers1 = Headers#{<<"content-encoding">> => <<"gzip">>},
       Mod_cowboy_req:reply(Code, Headers1, Body1, Req);
     false ->
       Mod_cowboy_req:reply(Code, Headers, Body, Req)
@@ -400,22 +400,22 @@ fetch_ip_address(Req, Mod_cowboy_req) ->
 
 
 json_headers() ->
-  (cors_headers())#{<<"Content-Type">> => <<"application/json">>}.
+  (cors_headers())#{<<"content-type">> => <<"application/json">>}.
 
 text_headers(text) ->
-  (cors_headers())#{<<"Content-Type">> => <<"text/plain">>};
+  (cors_headers())#{<<"content-type">> => <<"text/plain">>};
 text_headers(csv) ->
-  (cors_headers())#{<<"Content-Type">> => <<"text/csv">>};
+  (cors_headers())#{<<"content-type">> => <<"text/csv">>};
 text_headers(ContentType) ->
-  (cors_headers())#{<<"Content-Type">> => ContentType}.
+  (cors_headers())#{<<"content-type">> => ContentType}.
 
 
 cors_headers() ->
-  #{<<"Access-Control-Allow-Origin">> => <<"*">>,
-    <<"Access-Control-Allow-Methods">> => <<"GET, PUT, DELETE, OPTIONS">>,
-    <<"Access-Control-Expose-Headers">> => <<"*">>,
-    <<"Access-Control-Allow-Headers">> => <<"*">>,
-    <<"Access-Control-Allow-Private-Network">> => <<"true">>
+  #{<<"access-control-allow-origin">> => <<"*">>,
+    <<"access-control-allow-methods">> => <<"GET, PUT, DELETE, OPTIONS">>,
+    <<"access-control-expose-headers">> => <<"*">>,
+    <<"access-control-allow-headers">> => <<"*">>,
+    <<"access-control-allow-private-network">> => <<"true">>
   }.
 
 
@@ -540,7 +540,7 @@ check_accept_type(Accept, _) -> Accept.
 
 
 find_content_type_header(Headers) when is_map(Headers)->
-  ContentTypes = [maps:get(HeaderName, Headers) || HeaderName <- maps:keys(Headers), string:equal(HeaderName, <<"Content-Type">>, true)],
+  ContentTypes = [maps:get(HeaderName, Headers) || HeaderName <- maps:keys(Headers), string:equal(HeaderName, <<"content-type">>, true)],
   case ContentTypes of
     [ContentType|_] -> ContentType;
     [] -> undefined
