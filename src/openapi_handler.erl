@@ -254,7 +254,7 @@ collect_parameters(#{parameters := Parameters} = Spec, Req, ApiName, Mod_cowboy_
               {Args, Req4};
             _ ->
               Body = jsx:decode(TextBody, [return_maps]),
-              case openapi_schema:process(Body, #{schema => BodySchema, patch => true, name => ApiName, array_convert => false, extra_obj_key => error}) of
+              case openapi_schema:process(Body, #{schema => BodySchema, patch => true, name => ApiName, array_convert => false, extra_obj_key => error, required_obj_keys => error}) of
                 {error, ParseError_} ->
                   ParseError = maps:without([encoded], ParseError_),
                   {{error, ParseError#{name => request_body, input1 => Body}}, Req4};

@@ -29,6 +29,7 @@ process(Input, #{} = Opts) ->
     (apply_defaults,Flag) when Flag == true; Flag == false -> ok;
     (patch,Flag) when Flag == true; Flag == false -> ok;
     (extra_obj_key,Flag) when Flag == drop; Flag == error -> ok;
+    (required_obj_keys,Flag) when Flag == drop; Flag == error -> ok;
     (K,V) -> error({unknown_option,K,V})
   end, Opts),
   Schema = case Opts of
@@ -45,7 +46,8 @@ process(Input, #{} = Opts) ->
     patch => false,
     array_convert => DefaultArrayConvert,
     auto_convert => true,
-    extra_obj_key => drop
+    extra_obj_key => drop,
+    required_obj_keys => drop
   },
   case encode3(Schema, maps:merge(DefaultOpts,Opts), Input, []) of
     {error, Error} ->
@@ -159,7 +161,7 @@ encode3(#{oneOf := Choices}, Opts, Input, Path) ->
       end
   end;
 
-encode3(#{type := <<"object">>, properties := Properties}, #{query := Query} = Opts, Input, Path) ->
+encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Query} = Opts, Input, Path) ->
   Artificial = #{
     '$position' => #{type => <<"integer">>},
     '$reset' => #{type => <<"boolean">>},
@@ -211,7 +213,10 @@ encode3(#{type := <<"object">>, properties := Properties}, #{query := Query} = O
       end,
       UpdatedObj
   end, #{}, maps:merge(Artificial,Properties)),
-  check_extra_keys(Input, Encoded, Opts);
+  case check_required_keys(Encoded, Schema, Opts) of
+    {error, E} -> {error, E};
+    Encoded -> check_extra_keys(Input, Encoded, Opts)
+  end;
 
 
 encode3(#{type := <<"object">>}, _Opts, #{} = Input, _Path) ->
@@ -364,9 +369,18 @@ encode_number(_Schema, Input, _Path) ->
   Input.
 
 
+check_required_keys(#{} = Encoded, #{} = Schema, #{required_obj_keys := error} = _Opts) ->
+  Required = maps:get(required, Schema, []),
+  case Required -- maps:keys(add_binary_keys(Encoded)) of
+    [] -> Encoded;
+    Missing -> {error, #{missing_required => Missing}}
+  end;
+check_required_keys(Encoded, _Schema, _Opts) ->
+  Encoded.
+
+
 check_extra_keys(Input, Encoded, #{extra_obj_key := error} = _Opts) when is_map(Input) andalso is_map(Encoded) ->
-  Encoded1 = maps:fold(fun(K, V, AccIn) -> add_binary_keys(K, V, AccIn) end, Encoded, Encoded),
-  ExtraKeys = maps:keys(Input) -- maps:keys(Encoded1),
+  ExtraKeys = maps:keys(Input) -- maps:keys(add_binary_keys(Encoded)),
   case ExtraKeys of
     [_|_] -> {error, #{extra_keys => ExtraKeys, encoded => Encoded}};
     _ -> Encoded
@@ -376,11 +390,8 @@ check_extra_keys(_Input, Encoded, _Opts) ->
   Encoded.
 
 
-add_binary_keys(K, V, Encoded) when is_atom(K) ->
-  maps:merge(Encoded, #{atom_to_binary(K) => V});
-
-add_binary_keys(_K, _V, Encoded) ->
-  Encoded.
-
-
-
+add_binary_keys(Map) ->
+  maps:fold(fun
+    (K, V, Acc) when is_atom(K) -> Acc#{atom_to_binary(K) => V};
+    (_K, _V, Acc) -> Acc
+  end, Map, Map).
