@@ -14,7 +14,8 @@ groups() ->
       extra_keys_not_request,
       null_in_array,
       discriminator,
-      regexp_pattern
+      regexp_pattern,
+      required_keys
   ]}
   ].
 
@@ -109,3 +110,9 @@ regexp_pattern(_) ->
 
   ok.
 
+
+required_keys(_) ->
+  Json = #{<<"no_name">> => <<"read_default">>},
+  Schema = persistent_term:get({openapi_handler_schema,test_openapi}),
+  {error, #{missing_required := [<<"name">>]}} = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true, required_obj_keys => error}),
+  ok.
