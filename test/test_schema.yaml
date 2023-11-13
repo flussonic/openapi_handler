@@ -16,6 +16,22 @@ components:
         message:
           type: string
 
+    RequiredSample:
+      type: object
+      properties:
+        p1:
+          type: integer
+        p2:
+          type: integer
+          readOnly: true
+        p3:
+          type: integer
+          writeOnly: true
+      required:
+        - p1
+        - p2
+        - p3
+
   securitySchemes:
     BasicAuth:
       type: http
@@ -99,3 +115,19 @@ paths:
               examples:
                 'OK'
 
+  /requiredFilter:
+    post:
+      summary: Required filters in requests
+      operationId: saveRequiredFilter
+      responses:
+        '200':
+          description: Required fields sample
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequiredSample"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequiredSample"

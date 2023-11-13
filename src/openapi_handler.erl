@@ -240,7 +240,6 @@ collect_parameters(#{parameters := Parameters} = Spec, Req, ApiName, Mod_cowboy_
           end
       end
   end, #{raw_qs => Qs}, Parameters),
-
   case Args of
     {error, _} ->
       {Args, Req};
@@ -254,7 +253,7 @@ collect_parameters(#{parameters := Parameters} = Spec, Req, ApiName, Mod_cowboy_
               {Args, Req4};
             _ ->
               Body = jsx:decode(TextBody, [return_maps]),
-              case openapi_schema:process(Body, #{schema => BodySchema, patch => true, name => ApiName, array_convert => false, extra_obj_key => error, required_obj_keys => error}) of
+              case openapi_schema:process(Body, #{schema => BodySchema, patch => true, name => ApiName, array_convert => false, extra_obj_key => error, required_obj_keys => error, access_type => write}) of
                 {error, ParseError_} ->
                   ParseError = maps:without([encoded], ParseError_),
                   {{error, ParseError#{name => request_body, input1 => Body}}, Req4};
@@ -348,7 +347,7 @@ handle_response({ContentType_, Code, Headers, Response}, #{responses := Response
   ContentType = check_accept_type(ContentType_, is_binary(Response)),
   case Responses of
     #{Code := #{content := #{'application/json' := #{schema := Schema}}}} when (ContentType == json orelse ContentType == <<"application/json">>) ->
-      case openapi_schema:process(Response, #{schema => Schema, name => Name}) of
+      case openapi_schema:process(Response, #{schema => Schema, name => Name, required_obj_keys => error, access_type => read}) of
         {error, Error} ->
           {500, maps:merge(Headers, json_headers()), [jsx:encode(Error),"\n"]};
         TransformedResponse ->

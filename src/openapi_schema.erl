@@ -30,6 +30,7 @@ process(Input, #{} = Opts) ->
     (patch,Flag) when Flag == true; Flag == false -> ok;
     (extra_obj_key,Flag) when Flag == drop; Flag == error -> ok;
     (required_obj_keys,Flag) when Flag == drop; Flag == error -> ok;
+    (access_type,Flag) when Flag == read; Flag == write -> ok;
     (K,V) -> error({unknown_option,K,V})
   end, Opts),
   Schema = case Opts of
@@ -47,7 +48,8 @@ process(Input, #{} = Opts) ->
     array_convert => DefaultArrayConvert,
     auto_convert => true,
     extra_obj_key => drop,
-    required_obj_keys => drop
+    required_obj_keys => drop,
+    access_type => read
   },
   case encode3(Schema, maps:merge(DefaultOpts,Opts), Input, []) of
     {error, Error} ->
@@ -356,6 +358,17 @@ encode3(#{type := <<"boolean">>}, #{auto_convert := Convert}, Input, Path) ->
     <<"true">> when Convert -> true;
     <<"false">> when Convert -> false;
     _ -> {error, #{error => not_boolean, path => Path}}
+  end;
+
+encode3(#{type := [_| _] = Types} = Schema, Opts, Input, Path) ->
+  encode3_multi_types(Types, Schema, Opts, Input, Path).
+
+encode3_multi_types([], _Schema, _Opts, Input, Path) ->
+  {error, #{error => invalid_type, path => Path, input => Input}};
+encode3_multi_types([Type| Types], Schema, Opts, Input, Path) ->
+  case encode3(Schema#{type => Type}, Opts, Input, Path) of
+    {error, _ } -> encode3_multi_types(Types, Schema, Opts, Input, Path);
+    Encoded -> Encoded
   end.
 
 
@@ -369,14 +382,27 @@ encode_number(_Schema, Input, _Path) ->
   Input.
 
 
-check_required_keys(#{} = Encoded, #{} = Schema, #{required_obj_keys := error} = _Opts) ->
-  Required = maps:get(required, Schema, []),
+check_required_keys(#{} = Encoded, #{} = Schema, #{required_obj_keys := error} = Opts) ->
+  Required = get_required_keys(Schema, Opts),
   case Required -- maps:keys(add_binary_keys(Encoded)) of
     [] -> Encoded;
     Missing -> {error, #{missing_required => Missing}}
   end;
 check_required_keys(Encoded, _Schema, _Opts) ->
   Encoded.
+
+get_required_keys(#{required := [_| _] = Required, properties := Properties}, #{access_type := Access}) ->
+  Properties1 = add_binary_keys(Properties),
+  lists:filter(fun(P) ->
+    case Properties1 of
+      #{P := #{readOnly := true}} when Access == write -> false;
+      #{P := #{writeOnly := true}} when Access == read -> false;
+      #{P := _} -> true;
+      _ -> false
+    end
+  end, Required);
+get_required_keys(_Schema, _Opts) ->
+  [].
 
 
 check_extra_keys(Input, Encoded, #{extra_obj_key := error} = _Opts) when is_map(Input) andalso is_map(Encoded) ->
