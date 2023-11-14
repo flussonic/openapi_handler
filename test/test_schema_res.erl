@@ -23,3 +23,7 @@ headersContentType(#{accept := _Accept, content_type := ContentType} = Req) ->
     #{response_view := <<"simple">>} -> maps:get(ContentType, Content);
     _ -> {raw, 200, #{<<"content-type">> => atom_to_binary(ContentType)}, maps:get(ContentType, Content)} 
   end.
+
+
+saveRequiredFilter(#{json_body := B}) ->
+  #{} = B.

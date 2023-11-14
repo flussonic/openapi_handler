@@ -26,7 +26,8 @@ groups() ->
      check_xml_content_responses,
      check_json_content_responses,
      check_text_content_responses,
-     check_nonsense_content_responses
+     check_nonsense_content_responses,
+     required_keys_filter
    ]}
   ].
 
@@ -383,3 +384,21 @@ check_nonsense_content_responses(_) ->
   [], accept_type_list()),
   ok.
 
+
+required_keys_filter(_) ->
+  % required properties: p1, p2(r/o=true), p3(w/o=true)
+  Res1 = openapi_client:call(test_schema_api, saveRequiredFilter, #{json_body => #{
+    % no required properties
+  }}),
+  {error, {400, #{missing_required := [<<"p1">>, <<"p3">>]}}} = Res1, % p2 filtered out
+
+  Res2 = openapi_client:call(test_schema_api, saveRequiredFilter, #{json_body => #{
+    p1 => 1, p2 => 2, p3 => 3 % all required properties provided
+  }}),
+  #{p1 := 1, p2 := 2, p3 := 3} = Res2,
+
+  Res3 = openapi_client:call(test_schema_api, saveRequiredFilter, #{json_body => #{
+    p1 => 1, p3 => 3
+  }}),
+  {error, {500, #{missing_required := [<<"p2">>]}}} = Res3, % no p2 in response
+  ok.

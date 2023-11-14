@@ -15,7 +15,8 @@ groups() ->
       null_in_array,
       discriminator,
       regexp_pattern,
-      required_keys
+      required_keys,
+      required_keys_filter
   ]}
   ].
 
@@ -115,4 +116,26 @@ required_keys(_) ->
   Json = #{<<"no_name">> => <<"read_default">>},
   Schema = persistent_term:get({openapi_handler_schema,test_openapi}),
   {error, #{missing_required := [<<"name">>]}} = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true, required_obj_keys => error}),
+  ok.
+
+
+required_keys_filter(_) ->
+  Schema = #{
+    type => <<"object">>,
+    properties => #{
+      p1 => #{type => <<"integer">>},
+      p2 => #{type => <<"integer">>},
+      p3 => #{type => <<"integer">>, readOnly => true},
+      p4 => #{type => <<"integer">>, readOnly => true},
+      p5 => #{type => <<"integer">>, writeOnly => true},
+      p6 => #{type => <<"integer">>, writeOnly => true}},
+    required => [<<"p1">>, <<"p2">>, <<"p3">>, <<"p4">>, <<"p5">>, <<"p6">>]},
+  Obj = #{p1 => 1, p3 => 3, <<"p5">> => 5},
+  Opts = #{schema => Schema, required_obj_keys => error},
+  % required keys with readOnly=true are ignored in requests
+  {error, #{missing_required := [<<"p2">>, <<"p6">>]}} = openapi_schema:process(Obj, Opts#{access_type => write}),
+  % required keys with writeOnly=true are ignored in responses
+  {error, #{missing_required := [<<"p2">>, <<"p4">>]}} = openapi_schema:process(Obj, Opts#{access_type => read}),
+  % default access_type=read
+  {error, #{missing_required := [<<"p2">>, <<"p4">>]}} = openapi_schema:process(Obj, Opts),
   ok.
