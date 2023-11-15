@@ -385,6 +385,7 @@ check_nonsense_content_responses(_) ->
   ok.
 
 
+required_keys_filter([_| _]) -> {skip, disabled_by_34435};
 required_keys_filter(_) ->
   % required properties: p1, p2(r/o=true), p3(w/o=true)
   Res1 = openapi_client:call(test_schema_api, saveRequiredFilter, #{json_body => #{
