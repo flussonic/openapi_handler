@@ -245,7 +245,7 @@ list(Collection, #{} = Query0) ->
   T4 = erlang:system_time(milli_seconds),
   {LimitedCollection, HasMore} = limit_collection(maps:get(limit, Query, undefined), CursorFilteredCollection),
   T5 = erlang:system_time(milli_seconds),
-  SelectedCollection = select_fields(maps:get(select, Query, undefined), LimitedCollection),
+  SelectedCollection = select_fields(Query, LimitedCollection),
   ReversedCollection = case Reversed of
     true -> lists:reverse(SelectedCollection);
     false -> SelectedCollection
@@ -528,19 +528,28 @@ limit_collection(Count, Collection) when is_integer(Count) andalso Count > 0 ->
 
 
 
-select_fields(undefined, Streams) ->
-  Streams;
+select_fields(#{select := Fields} = Query, Streams) ->
+  Streams1 = case Query of
+    #{schema := Schema, schema_name := SchemaName, collection := CollectionName} ->
+      #{CollectionName := Streams1_} = openapi_schema:process(
+        #{CollectionName => Streams}, #{schema => Schema, name => SchemaName, required_obj_keys => drop, access_type => read, explain => [required]}),
+        Streams1_;
+    #{} ->
+      Streams
+  end,
+  [selector(Fields#{'$position' => true}, S) || S <- Streams1];
 
 
-
-select_fields(Fields, Streams) ->
-  [selector(Fields#{'$position' => true}, S) || S <- Streams].
+select_fields(_, Streams) ->
+  Streams.
 
 
 selector(true, S) ->
   S;
 
 selector(Fields, S) ->
+  RequiredKeys = [binary_to_atom(Key, latin1) || Key <- maps:get(required, maps:get('$explain', S, #{}), [])],
+  RequiredFields = maps:with(RequiredKeys, S),
   S1 = lists:flatmap(fun({K,Nested}) ->
     case S of
       #{K := V} ->
@@ -553,7 +562,7 @@ selector(Fields, S) ->
         end
     end      
   end, maps:to_list(Fields)),
-  maps:from_list(S1).
+  delete_explain(maps:merge(maps:from_list(S1), RequiredFields)).
 
 
 
@@ -619,3 +628,15 @@ calculate_cursors(Query, List, Reversed, HasMore, HasLess) ->
     next => Next64,
     prev => Prev64
   }.
+
+
+
+
+delete_explain(Elem) when is_list(Elem) ->
+  [delete_explain(ElemItem) || ElemItem <- Elem];
+delete_explain(Elem) when is_map(Elem) ->
+  maps:fold(fun(Key, Value, Acc) -> Acc#{Key => delete_explain(Value)} end, #{}, maps:without(['$explain'], Elem));
+delete_explain(Elem) ->
+  Elem.
+
+

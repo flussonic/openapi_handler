@@ -139,3 +139,16 @@ required_keys_filter(_) ->
   % default access_type=read
   {error, #{missing_required := [<<"p2">>, <<"p4">>]}} = openapi_schema:process(Obj, Opts),
   ok.
+
+
+check_explain(_) ->
+  Json = #{<<"name">> => <<"read_default">>, extra_key1 => <<"abc">>, <<"extrakey2">> => def, inputs => [#{}, #{}], cluster_ingest => #{}},
+  Schema = persistent_term:get({openapi_handler_schema,test_openapi}),
+  #{name := <<"read_default">>,
+    cluster_ingest := #{'$explain' := #{required := []}},
+    inputs := [
+      #{'$explain' := #{required := [<<"url">>]}},
+      #{'$explain' := #{required := [<<"url">>]}}],
+    '$explain' := #{required := [<<"name">>]}} = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true, explain => [required]}),
+  ok.
+
