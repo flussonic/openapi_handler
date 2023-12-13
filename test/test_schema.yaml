@@ -27,10 +27,23 @@ components:
         p3:
           type: integer
           writeOnly: true
+        p4:
+          type: integer
+        p5:
+          type: integer
       required:
         - p1
         - p2
         - p3
+    
+    CollectionSample:
+      type: object
+      properties:
+        elements:
+          type: array
+          items:
+            $ref: "#/components/schemas/RequiredSample"
+
 
   securitySchemes:
     BasicAuth:
@@ -131,3 +144,24 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/RequiredSample"
+
+  /selectCollectionFields:
+    post:
+      summary: Response with collection content
+      operationId: selectCollectionFields
+      responses:
+        '200':
+          description: 
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollectionSample"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object      
+      'x-collection-name': elements
+      'x-collection-type': some
+
+

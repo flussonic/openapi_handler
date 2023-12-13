@@ -440,9 +440,10 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, acc
         {error, {Code, #{} = Response}} when is_integer(Code) ->
           {json, Code, Response};
         #{CollectionName := FullList} = R0 when is_list(FullList) ->
+          #{responses := #{200 := #{content := #{'application/json' := #{schema := Schema}}}}} = OpenAPI,
           T2 = erlang:system_time(milli_seconds),
           Delta = maps:without([CollectionName], R0),
-          R = openapi_collection:list(FullList, Query#{timing => #{load => T2-T1}, collection => CollectionName}),
+          R = openapi_collection:list(FullList, Query#{timing => #{load => T2-T1}, collection => CollectionName, schema => Schema, schema_name => Name}),
           {json, 200, maps:merge(Delta, R)};
         {raw, Code, #{} = Headers, <<_/binary>> = Body} ->
           handle_raw_response(Accept, OperationId, Responses, {raw, Code, Headers, Body})

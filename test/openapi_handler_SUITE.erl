@@ -27,7 +27,8 @@ groups() ->
      check_json_content_responses,
      check_text_content_responses,
      check_nonsense_content_responses,
-     required_keys_filter
+     required_keys_filter,
+     select_not_filters_required_keys
    ]}
   ].
 
@@ -403,3 +404,26 @@ required_keys_filter(_) ->
   }}),
   {error, {500, #{missing_required := [<<"p2">>]}}} = Res3, % no p2 in response
   ok.
+
+
+select_not_filters_required_keys(_) ->
+  #{elements := [Elem1,Elem1]} = openapi_client:call(test_schema_api, selectCollectionFields,
+      #{json_body => #{p1 => 1, p2 => 2, p3 => 3, p4 => 4, p5 => 5}}),
+  #{p1 := 1, p2 := 2, p3 := 3, p4 := 4, p5 :=5} = Elem1,
+
+  % p1, p2 are 'readOnly' required keys
+  #{elements := [Elem2,Elem2]} = openapi_client:call(test_schema_api, selectCollectionFields,
+      #{json_body => #{p1 => 1, p2 => 2, p3 => 3, p4 => 4, p5 => 5}, select => <<"p3">>}),
+  #{p1 := 1, p2 := 2, p3 := 3} = Elem2,
+  undefined = maps:get(p4, Elem2, undefined),
+  undefined = maps:get(p5, Elem2, undefined),
+
+  % p3 is 'writeOnly' required key
+  #{elements := [Elem3,Elem3]} = openapi_client:call(test_schema_api, selectCollectionFields,
+      #{json_body => #{p1 => 1, p2 => 2, p3 => 3, p4 => 4, p5 => 5}, select => <<"p4">>}),
+  #{p1 := 1, p2 := 2, p4 := 4} = Elem3,
+  undefined = maps:get(p3, Elem3, undefined),
+  undefined = maps:get(p5, Elem3, undefined),
+
+  ok.
+

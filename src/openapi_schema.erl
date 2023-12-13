@@ -16,6 +16,8 @@
   is_map_key(const,Schema)
 )).
 
+-define(AVAILABLE_EXPLAIN_KEYS, [required]).
+
 
 process(Input, #{} = Opts) ->
   maps:map(fun
@@ -31,6 +33,7 @@ process(Input, #{} = Opts) ->
     (extra_obj_key,Flag) when Flag == drop; Flag == error -> ok;
     (required_obj_keys,Flag) when Flag == drop; Flag == error -> ok;
     (access_type,Flag) when Flag == read; Flag == write -> ok;
+    (explain,FlagList) -> check_explain_keys(FlagList);
     (K,V) -> error({unknown_option,K,V})
   end, Opts),
   Schema = case Opts of
@@ -94,11 +97,11 @@ encode3(#{allOf := Choices}, Opts, Input, Path) ->
     ({N,Choice}, Obj) ->
       case encode3(Choice, Opts, Input, Path ++ [N]) of
         {error, #{extra_keys := _Extrakeys, encoded := Obj1}} ->
-          maps:merge(Obj, Obj1);  % keep processing, all choices have to be processed for allOf
+          merge_objects(Opts, Choice, [Obj, Obj1]);  % keep processing, all choices have to be processed for allOf
         {error, E} ->
           {error, E};
         #{} = Obj1 ->
-          maps:merge(Obj, Obj1)
+          merge_objects(Opts, Choice, [Obj, Obj1])
       end
   end, #{}, lists:zip(lists:seq(0,length(Choices)-1),Choices)),
   check_extra_keys(Input, Encoded, Opts);
@@ -215,10 +218,11 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
       end,
       UpdatedObj
   end, #{}, maps:merge(Artificial,Properties)),
-  case check_required_keys(Encoded, Schema, Opts) of
+  Encoded1 = case check_required_keys(Encoded, Schema, Opts) of
     {error, E} -> {error, E};
     Encoded -> check_extra_keys(Input, Encoded, Opts)
-  end;
+  end,
+  merge_objects(Opts, Schema, [Encoded1]);
 
 
 encode3(#{type := <<"object">>}, _Opts, #{} = Input, _Path) ->
@@ -405,9 +409,10 @@ get_required_keys(_Schema, _Opts) ->
   [].
 
 
-check_extra_keys(Input, Encoded, #{extra_obj_key := error} = _Opts) when is_map(Input) andalso is_map(Encoded) ->
+check_extra_keys(Input, Encoded, #{extra_obj_key := error} = Opts) when is_map(Input) andalso is_map(Encoded) ->
   ExtraKeys = maps:keys(Input) -- maps:keys(add_binary_keys(Encoded)),
   case ExtraKeys of
+    ['$explain'] when #{explain => [required]} == Opts -> Encoded;
     [_|_] -> {error, #{extra_keys => ExtraKeys, encoded => Encoded}};
     _ -> Encoded
   end;
@@ -421,3 +426,26 @@ add_binary_keys(Map) ->
     (K, V, Acc) when is_atom(K) -> Acc#{atom_to_binary(K) => V};
     (_K, _V, Acc) -> Acc
   end, Map, Map).
+
+
+merge_objects(Opts, Schema, Objs) ->
+  ExplainMap = case Opts of
+    #{explain := [required]} ->
+      RequiredKeys = lists:foldl(fun
+        (Obj, Acc) -> lists:merge(maps:get(required, maps:get('$explain', Obj, #{}), []), Acc)
+      end, get_required_keys(Schema, Opts), Objs),
+      #{'$explain' => #{required => RequiredKeys}};
+    _ -> #{}
+  end,
+  lists:foldl(fun
+    (Obj, Acc) when is_map(Obj) andalso is_map(Acc) -> maps:merge(Obj, Acc);
+    ({error, E}, _) -> {error, E};
+    (_, {error, E}) -> {error, E}
+  end, ExplainMap, Objs).
+
+check_explain_keys(Keys) when is_list(Keys) ->
+  [error({unknown_option,explain,Key}) || Key <- Keys, lists:member(Key, ?AVAILABLE_EXPLAIN_KEYS) =/= true],
+  ok;
+
+check_explain_keys(Keys) ->
+  error({unknown_option,explain,Keys}).

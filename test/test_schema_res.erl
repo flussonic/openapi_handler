@@ -24,6 +24,9 @@ headersContentType(#{accept := _Accept, content_type := ContentType} = Req) ->
     _ -> {raw, 200, #{<<"content-type">> => atom_to_binary(ContentType)}, maps:get(ContentType, Content)} 
   end.
 
-
 saveRequiredFilter(#{json_body := B}) ->
   #{} = B.
+
+selectCollectionFields(#{json_body := B}) ->
+  #{elements => [B, B]}.
+
