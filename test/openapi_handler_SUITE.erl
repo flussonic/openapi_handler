@@ -260,7 +260,13 @@ json_array_ok(_) ->
   #{<<"json_res">> := <<"1">>} = jsx:decode(Res),
   ok.
 
-putFile(#{req := Req}) ->
+putFile(#{req := Req, '$cowboy_req' := CowboyReq}) ->
+  case openapi_handler:choose_module() of
+    openapi_handler ->
+      <<"PUT">> = cowboy_req:method(CowboyReq);
+    openapi_handler_legacy ->
+      skip
+  end,
   Body = <<"{\"size\":100}">>,
   Req1 = reply(200, #{<<"content-length">> => byte_size(Body), <<"content-type">> => <<"application/json">>}, Body, Req),
   {done, Req1}.
