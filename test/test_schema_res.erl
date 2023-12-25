@@ -27,6 +27,10 @@ headersContentType(#{accept := _Accept, content_type := ContentType} = Req) ->
 saveRequiredFilter(#{json_body := B}) ->
   #{} = B.
 
+
+selectCollectionFields(#{json_body := #{<<"unavailable">> := true}}) ->
+  {error,unavailable};
+
 selectCollectionFields(#{json_body := B}) ->
   #{elements => [B, B]}.
 
