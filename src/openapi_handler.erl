@@ -440,6 +440,12 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, acc
           {json, Code, Response};
         {error, {Code, #{} = Response}} when is_integer(Code) ->
           {json, Code, Response};
+        {error, badrequest} ->
+          {json, 400, #{error => bad_request}};
+        {error, enoent} ->
+          {json, 404, #{error => not_found}};
+        {error, unavailable} ->
+          {json, 503, #{error => unavailable}};
         #{CollectionName := FullList} = R0 when is_list(FullList) ->
           #{responses := #{200 := #{content := #{'application/json' := #{schema := Schema}}}}} = OpenAPI,
           T2 = erlang:system_time(milli_seconds),

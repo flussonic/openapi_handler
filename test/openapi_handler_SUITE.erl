@@ -28,7 +28,8 @@ groups() ->
      check_text_content_responses,
      check_nonsense_content_responses,
      required_keys_filter,
-     select_not_filters_required_keys
+     select_not_filters_required_keys,
+     unavailable_error
    ]}
   ].
 
@@ -431,5 +432,10 @@ select_not_filters_required_keys(_) ->
   undefined = maps:get(p3, Elem3, undefined),
   undefined = maps:get(p5, Elem3, undefined),
 
+  ok.
+
+
+unavailable_error(_) ->
+  {error,unavailable} = openapi_client:call(test_schema_api, selectCollectionFields, #{json_body => #{unavailable => true}}),
   ok.
 
