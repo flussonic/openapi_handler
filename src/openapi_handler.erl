@@ -177,7 +177,8 @@ do_init(Req, Name, CowboyPath, Mod_cowboy_req, Compat) ->
             ip => Ip,
             accept => Accept,
             originator => Originator,
-            authorization => Authorization
+            authorization => Authorization,
+            '$cowboy_req' => Req
           },
           case Module:authorize(Operation1) of
             #{} = AuthContext when NoHandle ->
@@ -312,7 +313,7 @@ handle(Req, #{} = Request) ->
 
 do_handle(Req, #{module := _, ip := _} = Request, Mod_cowboy_req) ->
   T1 = erlang:system_time(micro_seconds),
-  Response = handle_request(Request, Req),
+  Response = handle_request(Request),
   % T2 = erlang:system_time(micro_seconds),
   {Code2, Headers, PreparedResponse} = handle_response(Response, Request),
   T3 = erlang:system_time(micro_seconds),
@@ -419,7 +420,7 @@ cors_headers() ->
 
 
 handle_request(#{module := Module, operationId := OperationId, args := Args, accept := Accept, auth_context := AuthContext, responses := Responses,
-  'x-collection-name' := CollectionName} = OpenAPI, CowboyReq) ->
+  'x-collection-name' := CollectionName, '$cowboy_req' := CowboyReq} = OpenAPI) ->
   #{raw_qs := Qs} = Args,
   Type = maps:get('x-collection-type', OpenAPI),
   Name = maps:get(name, OpenAPI),
@@ -471,7 +472,7 @@ handle_request(#{module := Module, operationId := OperationId, args := Args, acc
       end
   end;
 
-handle_request(#{module := Module, operationId := OperationId, args := Args, accept := Accept, auth_context := AuthContext, ip := Ip, responses := Responses}, CowboyReq) ->
+handle_request(#{module := Module, operationId := OperationId, args := Args, accept := Accept, auth_context := AuthContext, ip := Ip, responses := Responses, '$cowboy_req' := CowboyReq}) ->
   try Module:OperationId(Args#{auth_context => AuthContext, agent_ip => Ip, '$cowboy_req' => CowboyReq}) of
     {error, badrequest} ->
       {json, 400, #{error => bad_request}};

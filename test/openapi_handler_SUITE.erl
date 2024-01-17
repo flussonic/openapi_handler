@@ -22,6 +22,7 @@ groups() ->
      erase_value_with_null,
      error_response,
      done_request,
+     autorize_handler_args,
      non_exist_key,
      check_xml_content_responses,
      check_json_content_responses,
@@ -115,7 +116,8 @@ json_routes(_) ->
 
 
 
-authorize(_) -> #{auth => yes_please}.
+authorize(#{'$cowboy_req' := _}) -> #{auth => yes_please};
+authorize(_) -> ct:fail("There is no '$cowboy_req' in the authorize request arguments").
 postprocess(JSON, _) -> JSON.
 log_call(CallInfo) ->
   (whereis(openapi_handler_SUITE_log_call_server) /= undefined) andalso (openapi_handler_SUITE_log_call_server ! {log_call, ?MODULE, CallInfo}).
@@ -286,6 +288,13 @@ done_request(_) ->
   unregister(openapi_handler_SUITE_log_call_server),
   ok.
 
+autorize_handler_args(_) ->
+  SchemaPath = code:lib_dir(openapi_handler, test) ++ "/done_req.yaml",
+  Routes = openapi_handler:routes(#{schema => SchemaPath, module => ?MODULE, name => aha, prefix => <<"/test/arf">>}),
+  [{<<"/test/arf/putFile">>, _, {aha, <<"/putFile">>}}] = Routes,
+
+  {response, 200, _, _Res} = fake_request(aha, <<"PUT">>, <<"/putFile">>, #{}),
+  ok.
 
 error_response(_) ->
   {error, {501,#{error := <<"not_implemented">>}}} =
