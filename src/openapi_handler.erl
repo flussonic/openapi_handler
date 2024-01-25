@@ -11,8 +11,9 @@
 -export([do_init/5, do_handle/3]).
 
 
-routes(#{schema := SchemaPath, module := Module, name := Name, prefix := Prefix}) ->
+routes(#{schema := SchemaPath, module := Module, name := Name, prefix := Prefix} = Config) ->
   #{} = Schema = load_schema(SchemaPath, Name),
+  SchemaOpts = get_schema_opts(Config),
   HandlerModule = choose_module(),
 
   #{paths := Paths} = Schema,
@@ -25,7 +26,7 @@ routes(#{schema := SchemaPath, module := Module, name := Name, prefix := Prefix}
 
     % It is too bad to pass all this stuff through cowboy options because it starts suffering
     % from GC on big state. Either ETS, either persistent_term, either compilation of custom code
-    persistent_term:put({openapi_handler_route,Name,CowboyPath}, PathSpec1#{name => Name, module => Module}),
+    persistent_term:put({openapi_handler_route,Name,CowboyPath}, PathSpec1#{name => Name, module => Module, schema_opts => SchemaOpts}),
     {<<Prefix/binary, CowboyPath/binary>>, HandlerModule, {Name,CowboyPath}}
   end, maps:to_list(Paths)),
   % After sorting, bindings (starting with ":") must be after constant path segments, so generic routes only work after specific ones.
@@ -126,7 +127,7 @@ init(Req, {Name, CowboyPath}) ->
   do_init(Req, Name, CowboyPath, cowboy_req, #{}).
 
 do_init(Req, Name, CowboyPath, Mod_cowboy_req, Compat) ->
-  #{module := Module, name := Name} = Spec = persistent_term:get({openapi_handler_route, Name, CowboyPath}),
+  #{module := Module, name := Name, schema_opts := SchemaOpts} = Spec = persistent_term:get({openapi_handler_route, Name, CowboyPath}),
   Method_ = Mod_cowboy_req:method(Req),
   Method = case Method_ of
     <<"POST">> -> post;
@@ -154,7 +155,7 @@ do_init(Req, Name, CowboyPath, Mod_cowboy_req, Compat) ->
         [jsx:encode(#{error => <<"unknown_operation">>}),"\n"], Req),
       {_ok, Req3, undefined};
     #{} ->
-      {Args, Req3} = collect_parameters(Operation, Req, Name, Mod_cowboy_req),
+      {Args, Req3} = collect_parameters(Operation, Req, Name, SchemaOpts, Mod_cowboy_req),
       case Args of
         {error, E} ->
           Req4 = Mod_cowboy_req:reply(400,
@@ -193,7 +194,7 @@ do_init(Req, Name, CowboyPath, Mod_cowboy_req, Compat) ->
   end.
 
 
-collect_parameters(#{parameters := Parameters} = Spec, Req, ApiName, Mod_cowboy_req) ->
+collect_parameters(#{parameters := Parameters} = Spec, Req, ApiName, SchemaOpts, Mod_cowboy_req) ->
   Qs = Mod_cowboy_req:qs(Req),
   QsVals = Mod_cowboy_req:parse_qs(Req),
   Bindings = Mod_cowboy_req:bindings(Req),
@@ -254,7 +255,7 @@ collect_parameters(#{parameters := Parameters} = Spec, Req, ApiName, Mod_cowboy_
               {Args, Req4};
             _ ->
               Body = jsx:decode(TextBody, [return_maps]),
-              case openapi_schema:process(Body, #{schema => BodySchema, patch => true, name => ApiName, array_convert => false, extra_obj_key => error, required_obj_keys => drop, access_type => write}) of
+              case openapi_schema:process(Body, maps:merge(#{schema => BodySchema, patch => true, name => ApiName, array_convert => false, extra_obj_key => error, required_obj_keys => drop, access_type => write}, SchemaOpts)) of
                 {error, ParseError_} ->
                   ParseError = maps:without([encoded], ParseError_),
                   {{error, ParseError#{name => request_body, input1 => Body}}, Req4};
@@ -557,3 +558,14 @@ find_content_type_header(Headers) when is_map(Headers)->
 
 terminate(_,_,_) ->
   ok.
+
+get_schema_opts(#{schema_opts := #{} = SchemaOpts}) ->
+  maps:map(fun
+    (extra_obj_key,Flag) when Flag == drop; Flag == error -> ok;
+    (K,V) -> error({bad_schema_opt,K,V})
+  end, SchemaOpts),
+  SchemaOpts;
+get_schema_opts(#{schema_opts := _}) ->
+  error(bad_schema_opts);
+get_schema_opts(#{}) ->
+  #{}.

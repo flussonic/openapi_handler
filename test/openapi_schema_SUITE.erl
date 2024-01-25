@@ -10,8 +10,8 @@ groups() ->
   [
     {process, [], [ % parallel
       read_default,
-      extra_keys_request,
-      extra_keys_not_request,
+      extra_keys_error,
+      extra_keys_drop,
       null_in_array,
       discriminator,
       regexp_pattern,
@@ -42,7 +42,7 @@ read_default(_) ->
   ok.
 
 
-extra_keys_request(_) ->
+extra_keys_error(_) ->
   Json = #{<<"name">> => <<"read_default">>, extra_key1 => <<"abc">>, <<"extrakey2">> => def},
   Schema = persistent_term:get({openapi_handler_schema,test_openapi}),
   {error,#{
@@ -55,7 +55,7 @@ extra_keys_request(_) ->
   ok.
 
 
-extra_keys_not_request(_) ->
+extra_keys_drop(_) ->
   Json = #{<<"name">> => <<"read_default">>, extra_key1 => <<"abc">>, <<"extrakey2">> => def},
   Schema = persistent_term:get({openapi_handler_schema,test_openapi}),
   #{inputs := [],name := <<"read_default">>,static := true} = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true}),

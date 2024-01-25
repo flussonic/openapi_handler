@@ -24,6 +24,7 @@ groups() ->
      done_request,
      autorize_handler_args,
      non_exist_key,
+     non_exist_key_drop,
      check_xml_content_responses,
      check_json_content_responses,
      check_text_content_responses,
@@ -57,6 +58,13 @@ init_per_suite(Config) ->
     name => petstore_server_api,
     module => fake_petstore
   }),
+  PetstoreWithSchemaOptsRoutes = openapi_handler:routes(#{
+    schema => PetstorePath,
+    prefix => <<"/test/yml">>,
+    name => petstore_with_schema_opts_server_api,
+    module => fake_petstore,
+    schema_opts => #{extra_obj_key => drop}
+  }),
   TestSchemaRoutes = openapi_handler:routes(#{
     schema => TestSchemaPath,
     prefix => <<"/test/yml">>,
@@ -65,19 +73,26 @@ init_per_suite(Config) ->
   }),
   {ok, _} = application:ensure_all_started(cowboy),
   start_http(PetstoreRoutes, petstore_api_server),
+  start_http(PetstoreWithSchemaOptsRoutes, petstore_with_schema_opts_api_server),
   start_http(TestSchemaRoutes, test_schema_server),
   PetstorePort = ranch:get_port(petstore_api_server),
+  PetstoreWithSchemaOptsPort = ranch:get_port(petstore_with_schema_opts_api_server),
   TestSchemaPort = ranch:get_port(test_schema_server),
 
   PetstoreApi = openapi_client:load(#{
     schema_url => PetstorePath,
     url => <<"http://127.0.0.1:",(integer_to_binary(PetstorePort))/binary,"/test/yml">>
   }),
+  PetstoreWithSchemaOptsApi = openapi_client:load(#{
+    schema_url => PetstorePath,
+    url => <<"http://127.0.0.1:",(integer_to_binary(PetstoreWithSchemaOptsPort))/binary,"/test/yml">>
+  }),
   TestSchemaApi = openapi_client:load(#{
     schema_url => TestSchemaPath,
     url => <<"http://127.0.0.1:",(integer_to_binary(TestSchemaPort))/binary,"/test/yml">>
   }),
   openapi_client:store(petstore_api, PetstoreApi),
+  openapi_client:store(petstore_with_schema_opts_api, PetstoreWithSchemaOptsApi),
   openapi_client:store(test_schema_api, TestSchemaApi),
   Config.
 
@@ -164,6 +179,11 @@ non_exist_key(_) ->
     <<"input1">> := #{<<"firstName">> := <<"Anna">>,<<"non_exist">> := <<"some">>},
     <<"name">> := <<"request_body">>,
     <<"while">> := <<"parsing_parameters">>} = jsx:decode(Res),
+  ok.
+
+non_exist_key_drop(_) ->
+  Args = #{username => <<"Mary">>, json_body => #{firstName => null, non_exist_key => some}},
+  #{id := 15} = openapi_client:call(petstore_with_schema_opts_api,updateUser,Args),
 
   ok.
 
