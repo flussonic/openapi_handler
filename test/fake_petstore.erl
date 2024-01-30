@@ -19,6 +19,8 @@ getUserByName(#{username := <<"Jack">>}) ->
   #{username => <<"Jack">>, id => <<"238457234857">>}.
 
 updateUser(#{username := <<"Mary">>, json_body := Body}) ->
+  ExcessFieldsMap = maps:without([id, pet, username, firstName, lastName, email, password, phone, userStatus, image, addresses, items], Body),
+  0 == maps:size(ExcessFieldsMap) orelse ct:fail("There is excess field in map: ~p", [ExcessFieldsMap]),
   case Body of
     #{firstName := undefined} -> #{username => <<"Mary">>, id => 15};
     _ -> {json, 400, #{error => must_erase_firstName, body => Body}}
