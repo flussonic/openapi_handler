@@ -335,16 +335,20 @@ filter2({Key,#{'$ne' := Value}}, Item) ->
   getkey(Key,Item) =/= Value;
 
 filter2({Key,#{'$gt' := Value}}, Item) ->
-  getkey(Key,Item) > Value;
+  V = getkey(Key,Item),
+  V > Value andalso V =/= undefined;
 
 filter2({Key,#{'$lt' := Value}}, Item) ->
-  getkey(Key,Item) < Value;
+  V = getkey(Key,Item),
+  V < Value andalso V =/= undefined;
 
 filter2({Key,#{'$gte' := Value}}, Item) ->
-  getkey(Key,Item) >= Value;
+  V = getkey(Key,Item),
+  V >= Value andalso V =/= undefined;
 
 filter2({Key,#{'$lte' := Value}}, Item) ->
-  getkey(Key,Item) =< Value;
+  V = getkey(Key,Item),
+  V =< Value andalso V =/= undefined;
 
 filter2({Key,#{'$like' := Value}}, Item) ->
   case to_b2(getkey(Key,Item)) of
@@ -422,13 +426,19 @@ getkey(K,S) ->
   maps_get(K,S).
 
 maps_get(K,S) ->
-  case S of
+  V1 = case S of
     #{K := V} ->
       V;
     #{} when is_binary(K) ->
       maps:get(binary_to_existing_atom(K,latin1),S, undefined);
     _ ->
       undefined
+  end,
+  case V1 of
+    null -> undefined;
+    <<"null">> -> undefined;
+    <<"undefined">> -> undefined;
+    V1 -> V1
   end.
 
 

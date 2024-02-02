@@ -79,6 +79,7 @@ filter_like(_) ->
 filter_gt(_) ->
   #{items := [#{name := <<"c/09">>}]} = q([{<<"name_gt">>,<<"c/08">>}]),
   #{items := [#{name := <<"c/09">>}]} = q([{<<"stats.opened_at_gt">>,<<"1631102874142">>}]),
+  #{items := [#{name := <<"c/08">>}]} = q([{<<"stats.client_count_gt">>,<<"4">>}]),
   ok.
 
 
@@ -86,6 +87,7 @@ filter_gt(_) ->
 filter_gte(_) ->
   #{items := [#{name := <<"c/08">>},#{name := <<"c/09">>}]} = q([{<<"name_gte">>,<<"c/08">>}]),
   #{items := [#{name := <<"c/08">>},#{name := <<"c/09">>}]} = q([{<<"stats.opened_at_gte">>,<<"1631102874142">>}]),
+  #{items := [#{name := <<"c/08">>}]} = q([{<<"stats.client_count_gte">>,<<"5">>}]),
   ok.
 
 
@@ -327,7 +329,7 @@ dataset() ->
             static => true,
             stats =>
                 #{alive => true,bitrate => 137,bufferings => 0,
-                  bytes_in => 98691,bytes_out => 179,client_count => 0,
+                  bytes_in => 98691,bytes_out => 179,client_count => 5,
                   dvr_enabled => false,dvr_only => false,
                   dvr_replication_running => false,
                   id => <<"6138a79a-239b-4902-a2dd-d8d10417bd69">>,
@@ -367,7 +369,7 @@ dataset() ->
             static => true,
             stats =>
                 #{alive => true,bitrate => 137,bufferings => 0,
-                  bytes_in => 98691,bytes_out => 179,client_count => 0,
+                  bytes_in => 98691,bytes_out => 179,client_count => null,
                   dvr_enabled => false,dvr_only => false,
                   dvr_replication_running => false,
                   id => <<"6138a79a-a254-4742-a6bc-477cb557ece8">>,
