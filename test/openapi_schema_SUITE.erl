@@ -16,7 +16,8 @@ groups() ->
       discriminator,
       regexp_pattern,
       required_keys,
-      required_keys_filter
+      required_keys_filter,
+      check_explain
   ]}
   ].
 
