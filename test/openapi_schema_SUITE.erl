@@ -17,7 +17,8 @@ groups() ->
       regexp_pattern,
       required_keys,
       required_keys_filter,
-      check_explain
+      check_explain,
+      check_explain_on_error
   ]}
   ].
 
@@ -151,5 +152,13 @@ check_explain(_) ->
       #{'$explain' := #{required := [<<"url">>]}},
       #{'$explain' := #{required := [<<"url">>]}}],
     '$explain' := #{required := [<<"name">>]}} = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true, explain => [required]}),
+  ok.
+
+check_explain_on_error(_) ->
+  Json = #{<<"name">> => <<"read_default">>, <<"position">> => true, extra_key1 => <<"abc">>, <<"extrakey2">> => def, inputs => [#{}, #{}], cluster_ingest => #{}},
+  Schema = persistent_term:get({openapi_handler_schema,test_openapi}),
+  {error, #{
+    error := not_integer, input := true, path := [<<"stream_config">>, 0, <<"stream_config_specific">>, position]}
+  } = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true, explain => [required]}),
   ok.
 

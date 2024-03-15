@@ -432,6 +432,7 @@ merge_objects(Opts, Schema, Objs) ->
   ExplainMap = case Opts of
     #{explain := [required]} ->
       RequiredKeys = lists:foldl(fun
+        ({error, _}, Acc) -> Acc;
         (Obj, Acc) -> lists:merge(maps:get(required, maps:get('$explain', Obj, #{}), []), Acc)
       end, get_required_keys(Schema, Opts), Objs),
       #{'$explain' => #{required => RequiredKeys}};
