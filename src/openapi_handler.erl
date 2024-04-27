@@ -529,7 +529,10 @@ is_binary_content_required(Responses, Code, ContentType_) ->
 handle_raw_response(Accept, OperationId, Responses, {raw, Code, Headers, Body}) when is_binary(Body) ->
   ContentType = find_content_type_header(Headers),
   case (is_binary_content_required(Responses, Code, ContentType) == true) andalso
-       (Accept == any orelse nomatch =/= re:run(content_type_bin(Accept), ContentType)) of
+       (Accept == any orelse
+        is_tuple(binary:match(content_type_bin(Accept), ContentType)) orelse
+        is_tuple(binary:match(content_type_bin(Accept), <<"*/*">>)))
+  of
     true -> {ContentType, Code, Headers, Body};
     false ->
       ?LOG_ALERT(#{operationId => OperationId, invalid_response => {raw, Code, Headers, Body}, accept => Accept}),
