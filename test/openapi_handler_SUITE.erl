@@ -334,6 +334,8 @@ valid_raw_response_value(<<"application/json">>  = _ContentType, _Accept) ->
   {error,{500,#{error => <<"invalid_response">>}}};
 valid_raw_response_value(ContentType, <<"*/*">> = _Accept) ->
   content(ContentType);
+valid_raw_response_value(ContentType, <<"random/before-wildcard; */*">> = _Accept) ->
+  content(ContentType);
 valid_raw_response_value(ContentType, Accept) when ContentType == Accept ->
   content(ContentType);
 valid_raw_response_value(_, _) ->
@@ -348,6 +350,8 @@ valid_simple_response_value(_ContentType, <<"application/json">> = _Accept) ->
   {error,{500,#{error => <<"invalid_response">>}}};
 valid_simple_response_value(_ContentType, <<"random/nonsense">> = _Accept) ->
   {error,{500,#{error => <<"invalid_response">>}}}; % <<"random/nonsense">> is not described
+valid_simple_response_value(_ContentType, <<"random/before-wildcard; */*">> = _Accept) ->
+  {error,{500,#{error => <<"invalid_response">>}}};
 valid_simple_response_value(ContentType, _Accept) ->
   content(ContentType).
 
@@ -362,7 +366,7 @@ content(ContentType) ->
 
 
 accept_type_list() ->
-  [<<"text/plain">>, <<"*/*">>, <<"application/xml">>, <<"application/json">>, <<"random/nonsense">>].
+  [<<"text/plain">>, <<"*/*">>, <<"application/xml">>, <<"application/json">>, <<"random/nonsense">>, <<"random/before-wildcard; */*">>].
 
 
 get_response(ContentType, Accept) -> do_get_response(#{content_type => ContentType, accept => Accept}).
