@@ -18,7 +18,8 @@ groups() ->
       required_keys,
       required_keys_filter,
       check_explain,
-      check_explain_on_error
+      check_explain_on_error,
+      one_of_integer_const
   ]}
   ].
 
@@ -162,3 +163,11 @@ check_explain_on_error(_) ->
   } = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true, explain => [required]}),
   ok.
 
+one_of_integer_const(_) ->
+  Json = #{<<"name">> => <<"one_of_integer_const">>, <<"inputs">> => [#{<<"apts">> => 1}, #{<<"apts">> => <<"3">>}, #{<<"apts">> => <<"video">>}]},
+  Schema = persistent_term:get({openapi_handler_schema,test_openapi}),
+  #{
+    name := <<"one_of_integer_const">>,
+    inputs := [#{apts := 1}, #{apts := 3}, #{apts := video}]
+  } = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true, explain => [required]}),
+  ok.

@@ -309,13 +309,18 @@ encode3(#{type := <<"number">>} = Schema, #{auto_convert := Convert}, Input, Pat
     _ -> {error, #{error => not_number, path => Path, input => Input}}
   end;
 
-encode3(#{const := Value}, #{auto_convert := Convert}, Input, Path) when is_atom(Input) orelse is_binary(Input) ->
+encode3(#{const := Value}, #{auto_convert := Convert}, Input, Path) when is_atom(Input) orelse is_binary(Input) orelse is_integer(Input) ->
   case Input of
     <<Value/binary>> when Convert ->
       binary_to_atom(Value,latin1);
     Value ->
       Input;
-    _ when is_atom(Input) andalso Convert == true -> 
+    _ when is_integer(Value) ->
+      case integer_to_binary(Value) of
+        Input -> Value;
+        _ -> {error, #{error => not_const3, path => Path, input => Input, value => Value}}
+      end;
+    _ when is_atom(Input) andalso Convert == true ->
         case atom_to_binary(Input,latin1) of
           Value -> Input;
           _ -> {error, #{error => not_const1, path => Path, input => Input}}
