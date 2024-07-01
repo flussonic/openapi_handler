@@ -15,6 +15,7 @@ groups() ->
       null_in_array,
       discriminator,
       regexp_pattern,
+      min_max_length,
       required_keys,
       required_keys_filter,
       check_explain,
@@ -107,12 +108,22 @@ discriminator(_) ->
 
 regexp_pattern(_) ->
 
-  {error, #{error := nomatch_pattern}} =  openapi_schema:process(<<"123">>, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
-  {error, #{error := not_string}} =  openapi_schema:process(abc, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
+  {error, #{error := nomatch_pattern}} = openapi_schema:process(<<"123">>, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
+  % {error, #{error := not_string}} = openapi_schema:process(abc, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
+  abc = openapi_schema:process(abc, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
   <<"abc">> =  openapi_schema:process(<<"abc">>, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
   abc =  openapi_schema:process(abc, #{schema => #{type => <<"string">>}}),
 
   ok.
+
+
+min_max_length(_) ->
+  {error, #{error := too_short}} = 
+    openapi_schema:process(<<"123">>, #{schema => #{type => <<"string">>, minLength => 5}}),
+  {error, #{error := too_long}} = 
+    openapi_schema:process(<<"123">>, #{schema => #{type => <<"string">>, maxLength => 2}}),
+  ok.
+
 
 
 required_keys(_) ->

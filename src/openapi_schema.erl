@@ -340,24 +340,31 @@ encode3(#{enum := Choices, type := <<"string">>}, #{auto_convert := Convert}, In
     false -> {error, #{unknown_enum_option => Input, path => Path, available => Choices}}
   end;
 
-encode3(#{pattern := RegExp, type := <<"string">>}, _, Input, Path) ->
-  case Input of
-    _ when is_binary(Input) ->
-      case re:run(Input, RegExp) of
-        {match, _} ->
-          Input;
-        nomatch ->
-          {error, #{error => nomatch_pattern, path => Path, input => Input}}
-      end;
+encode3(#{type := <<"string">>} = Spec, _, Input, Path) ->
+  {Input1, InputForValidation} = case Input of
+    _ when is_binary(Input) -> {Input, Input};
+    _ when is_atom(Input) -> {Input, atom_to_binary(Input)};
+    _ -> {{error, #{error => not_string, path => Path, input => Input}}, undefined}
+  end,
+  case Input1 of
+    {error, _} ->
+      Input1;
     _ ->
-      {error, #{error => not_string, path => Path, input => Input}}
-  end;
-
-encode3(#{type := <<"string">>}, _, Input, Path) ->
-  case Input of
-    _ when is_binary(Input) -> Input;
-    _ when is_atom(Input) -> Input;
-    _ -> {error, #{error => not_string, path => Path, input => Input}}
+      case Spec of
+        #{minLength := MinLength} when size(InputForValidation) < MinLength ->
+          {error, #{error => too_short, path => Path, input => Input, min_length => MinLength}};
+        #{maxLength := MaxLength} when size(InputForValidation) > MaxLength ->
+          {error, #{error => too_long, path => Path, input => Input, max_length => MaxLength}};
+        #{pattern := RegExp} ->
+          case re:run(InputForValidation, RegExp) of
+            {match, _} ->
+              Input1;
+            nomatch ->
+              {error, #{error => nomatch_pattern, path => Path, input => Input1, pattern => RegExp}}
+          end;
+        #{} ->
+          Input1
+      end
   end;
 
 encode3(#{type := <<"boolean">>}, #{auto_convert := Convert}, Input, Path) ->
