@@ -14,8 +14,11 @@ groups() ->
       extra_keys_drop,
       null_in_array,
       discriminator,
+      non_object_validate,
       regexp_pattern,
       min_max_length,
+      max_items_array,
+      max_items_object,
       required_keys,
       required_keys_filter,
       check_explain,
@@ -106,6 +109,10 @@ discriminator(_) ->
   ok.
 
 
+non_object_validate(_) ->
+  {error, #{error := not_object}} = openapi_schema:process([<<"123">>], #{schema => #{type => <<"object">>}}),
+  ok.
+
 regexp_pattern(_) ->
 
   {error, #{error := nomatch_pattern}} = openapi_schema:process(<<"123">>, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
@@ -125,6 +132,15 @@ min_max_length(_) ->
   ok.
 
 
+max_items_array(_) ->
+  {error, #{error := too_many_items}} = openapi_schema:process([1,2,3],
+    #{schema => #{type => <<"array">>, maxItems => 2, items => #{type => <<"integer">>}}}),
+  ok.
+
+max_items_object(_) ->
+  {error, #{error := too_many_items}} = openapi_schema:process(#{a => 1,b => 2, c => 3}, 
+    #{schema => #{type => <<"object">>, maxItems => 2, additionalProperties => #{type => integer}}}),
+  ok.
 
 required_keys(_) ->
   Json = #{<<"no_name">> => <<"read_default">>},
