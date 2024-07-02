@@ -169,7 +169,7 @@ encode3(#{oneOf := Choices}, Opts, Input, Path) ->
 encode3(#{type := <<"object">>, maxItems := MaxItems}, #{}, #{} = Input, Path) when map_size(Input) > MaxItems ->
   {error, #{error => too_many_items, detail => map_size(Input), path => Path}};
 
-encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Query} = Opts, Input, Path) ->
+encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Query} = Opts, #{} = Input, Path) ->
   Artificial = #{
     '$position' => #{type => <<"integer">>},
     '$reset' => #{type => <<"boolean">>},

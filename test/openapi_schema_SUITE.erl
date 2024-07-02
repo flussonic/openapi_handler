@@ -21,6 +21,7 @@ groups() ->
       max_items_object,
       required_keys,
       required_keys_filter,
+      validate_scalar_as_object,
       check_explain,
       check_explain_on_error,
       one_of_integer_const
@@ -29,7 +30,7 @@ groups() ->
 
 
 init_per_suite(Config) ->
-  SchemaPath = code:lib_dir(openapi_handler, test) ++ "/flussonic-230127.json",
+  SchemaPath = code:lib_dir(openapi_handler) ++ "/test/flussonic-230127.json",
   openapi_handler:load_schema(SchemaPath, test_openapi),
   Config.
 
@@ -170,6 +171,12 @@ required_keys_filter(_) ->
   {error, #{missing_required := [<<"p2">>, <<"p4">>]}} = openapi_schema:process(Obj, Opts),
   ok.
 
+
+validate_scalar_as_object(_) ->
+  Json = #{<<"inputs">> => [<<"udp://239.0.0.1">>]},
+  Opts = #{type => stream_config, whole_schema => persistent_term:get({openapi_handler_schema,test_openapi})},
+  {error, #{error := not_object, path := _}} = openapi_schema:process(Json, Opts),
+  ok.
 
 check_explain(_) ->
   Json = #{<<"name">> => <<"read_default">>, extra_key1 => <<"abc">>, <<"extrakey2">> => def, inputs => [#{}, #{}], cluster_ingest => #{}},
