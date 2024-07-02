@@ -101,7 +101,7 @@ read_schema(SchemaPath) ->
   end,
   DecodedSchema = case Format of
     json ->
-      jsx:decode(Bin,[return_maps,{labels,atom}]);
+      openapi_json:decode_with_atoms(Bin);
     yaml ->
       application:ensure_all_started(yamerl),
       [Decoded0] = yamerl:decode(Bin, [{erlang_atom_autodetection, false}, {map_node_format, map}, {str_node_as_binary, true}]),
@@ -152,7 +152,7 @@ do_init(Req, Name, CowboyPath, Mod_cowboy_req, Compat) ->
     undefined ->
       Req3 = Mod_cowboy_req:reply(405,
         json_headers(),
-        [jsx:encode(#{error => <<"unknown_operation">>}),"\n"], Req),
+        [openapi_json:encode(#{error => <<"unknown_operation">>}),"\n"], Req),
       {_ok, Req3, undefined};
     #{} ->
       {Args, Req3} = collect_parameters(Operation, Req, Name, SchemaOpts, Mod_cowboy_req),
@@ -160,7 +160,7 @@ do_init(Req, Name, CowboyPath, Mod_cowboy_req, Compat) ->
         {error, E} ->
           Req4 = Mod_cowboy_req:reply(400,
             json_headers(),
-            [jsx:encode(E#{while => parsing_parameters}),"\n"], Req3),
+            [openapi_json:encode(E#{while => parsing_parameters}),"\n"], Req3),
           {_ok, Req4, undefined};
         #{} ->
           Accept = case Mod_cowboy_req:header(<<"accept">>, Req3, <<"application/json">>) of
@@ -187,7 +187,7 @@ do_init(Req, Name, CowboyPath, Mod_cowboy_req, Compat) ->
             #{} = AuthContext ->
               handle(Req, Operation1#{auth_context => AuthContext});
             {error, denied} ->
-              Req4 = Mod_cowboy_req:reply(403, json_headers(), [jsx:encode(#{error => authorization_failed}),"\n"], Req3),
+              Req4 = Mod_cowboy_req:reply(403, json_headers(), [openapi_json:encode(#{error => authorization_failed}),"\n"], Req3),
               {_ok, Req4, undefined}
           end
       end
@@ -250,11 +250,13 @@ collect_parameters(#{parameters := Parameters} = Spec, Req, ApiName, SchemaOpts,
         #{requestBody := #{content := #{'application/json' := #{schema := BodySchema}}}} when
           ContentType == 'application/json' ->
           {ok, TextBody, Req4} = Mod_cowboy_req:read_body(Req),
-          case TextBody of
-            <<>> ->
+          Body = openapi_json:decode(TextBody),
+          case Body of
+            _ when TextBody == <<>> ->
               {Args, Req4};
+            {error, DecodeError} ->
+              {{error, #{error => DecodeError, name => request_body}}, Req4};
             _ ->
-              Body = jsx:decode(TextBody, [return_maps]),
               case openapi_schema:process(Body, maps:merge(#{schema => BodySchema, patch => true, name => ApiName, array_convert => false, extra_obj_key => error, required_obj_keys => drop, access_type => write}, SchemaOpts)) of
                 {error, ParseError_} ->
                   ParseError = maps:without([encoded], ParseError_),
@@ -351,18 +353,18 @@ handle_response({ContentType_, Code, Headers, Response}, #{responses := Response
     #{Code := #{content := #{'application/json' := #{schema := Schema}}}} when (ContentType == json orelse ContentType == <<"application/json">>) ->
       case openapi_schema:process(Response, #{schema => Schema, name => Name, required_obj_keys => drop, access_type => read}) of
         {error, Error} ->
-          {500, maps:merge(Headers, json_headers()), [jsx:encode(Error),"\n"]};
+          {500, maps:merge(Headers, json_headers()), [openapi_json:encode(Error),"\n"]};
         TransformedResponse ->
           Postprocessed = case erlang:function_exported(Module, postprocess, 2) of
             true -> Module:postprocess(TransformedResponse, Request);
             false -> TransformedResponse
           end,
-          {Code, maps:merge(Headers, json_headers()), [jsx:encode(Postprocessed),"\n"]}
+          {Code, maps:merge(Headers, json_headers()), [openapi_json:encode(Postprocessed),"\n"]}
       end;
     #{} when is_binary(Response) ->
       {Code, maps:merge(Headers, text_headers(ContentType)), Response};
     #{} ->
-      {Code, maps:merge(Headers, json_headers()), [jsx:encode(Response),"\n"]}
+      {Code, maps:merge(Headers, json_headers()), [openapi_json:encode(Response),"\n"]}
   end.
 
 

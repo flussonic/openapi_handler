@@ -14,6 +14,7 @@ groups() ->
      not_implemented,
      path_parameters,
      json_body_parameters,
+     broken_json,
      query_string_parameters,
      multiple_file_upload,
      json_array_error,
@@ -50,8 +51,8 @@ init_per_suite(Config) ->
   {ok, _} = application:ensure_all_started(cowboy),
   {ok, _} = application:ensure_all_started(lhttpc),
 
-  PetstorePath = filename:join(code:lib_dir(openapi_handler, test),"redocly-petstore.yaml"),
-  TestSchemaPath = filename:join(code:lib_dir(openapi_handler, test),"test_schema.yaml"),
+  PetstorePath = filename:join(code:lib_dir(openapi_handler),"test/redocly-petstore.yaml"),
+  TestSchemaPath = filename:join(code:lib_dir(openapi_handler),"test/test_schema.yaml"),
   PetstoreRoutes = openapi_handler:routes(#{
     schema => PetstorePath,
     prefix => <<"/test/yml">>,
@@ -108,7 +109,7 @@ end_per_suite(Config) ->
 % Here, in routes group we ensure openapi_handler:routes/1 returns a valid list
 % of Cowboy matching rules in proper order (longer path first)
 yaml_routes(_) ->
-  SchemaPath = code:lib_dir(openapi_handler, test) ++ "/redocly-petstore.yaml",
+  SchemaPath = code:lib_dir(openapi_handler) ++ "/test/redocly-petstore.yaml",
   Routes = openapi_handler:routes(#{schema => SchemaPath, module => ?MODULE, name => petstore_yaml, prefix => <<"/test/yml">>}),
   [{<<"/test/yml/user/logout">>,_,{petstore_yaml,<<"/user/logout">>}},
    _, _, _,
@@ -118,7 +119,7 @@ yaml_routes(_) ->
   ok.
 
 json_routes(_) ->
-  SchemaPath = code:lib_dir(openapi_handler, test) ++ "/redocly-big-openapi.json",
+  SchemaPath = code:lib_dir(openapi_handler) ++ "/test/redocly-big-openapi.json",
   Routes = openapi_handler:routes(#{schema => SchemaPath, module => ?MODULE, name => rebilly_json, prefix => <<"/test/json">>}),
   [{<<"/test/json/websites/:id/webhook">>,_, {rebilly_json,<<"/websites/:id/webhook">>}},
    {<<"/test/json/websites/:id">>,_, {rebilly_json,<<"/websites/:id">>}},
@@ -194,6 +195,16 @@ json_body_parameters(_) ->
     openapi_client:call(petstore_api, placeOrder, #{json_body => Order0}),
   ok.
 
+broken_json(_) ->
+  Port = integer_to_list(ranch:get_port(petstore_api_server)),
+  JSON = "{\"key\":\"value\"]}",
+  {ok, {{400,_},Headers,Body}} = lhttpc:request("http://127.0.0.1:"++Port++"/test/yml/store/order", post,
+    [{"Content-Type", "application/json"}], JSON, 5000),
+  "application/json" = proplists:get_value("Content-Type", Headers),
+  #{<<"error">> := <<"broken_json">>} = openapi_json:decode(Body),
+  ok.
+
+
 query_string_parameters(_) ->
   [#{name := <<"Dingo">>}] =
     openapi_client:call(petstore_api, findPetsByStatus, #{status => [pending,sold]}),
@@ -262,7 +273,7 @@ uploadFiles(#{files := Files}) ->
   [{<<"upload_name1.txt">>,<<"11\n">>},{<<"file2.txt">>,<<"22\n">>}] = Files,
   #{}.
 multiple_file_upload(_) ->
-  SchemaPath = code:lib_dir(openapi_handler, test) ++ "/multiple-upload.yaml",
+  SchemaPath = code:lib_dir(openapi_handler) ++ "/test/multiple-upload.yaml",
   Routes = openapi_handler:routes(#{schema => SchemaPath, module => ?MODULE, name => mu, prefix => <<"/test/mu">>}),
   [{<<"/test/mu/uploadFiles">>, _, {mu, <<"/uploadFiles">>}}] = Routes,
 
@@ -296,7 +307,7 @@ putFile(#{req := Req, '$cowboy_req' := CowboyReq}) ->
 
 done_request(_) ->
   register(openapi_handler_SUITE_log_call_server, self()),
-  SchemaPath = code:lib_dir(openapi_handler, test) ++ "/done_req.yaml",
+  SchemaPath = code:lib_dir(openapi_handler) ++ "/test/done_req.yaml",
   Routes = openapi_handler:routes(#{schema => SchemaPath, module => ?MODULE, name => put, prefix => <<"/test/put">>}),
   [{<<"/test/put/putFile">>, _, {put, <<"/putFile">>}}] = Routes,
   _ = fake_request(put, <<"PUT">>, <<"/putFile">>, #{}),
@@ -309,7 +320,7 @@ done_request(_) ->
   ok.
 
 autorize_handler_args(_) ->
-  SchemaPath = code:lib_dir(openapi_handler, test) ++ "/done_req.yaml",
+  SchemaPath = code:lib_dir(openapi_handler) ++ "/test/done_req.yaml",
   Routes = openapi_handler:routes(#{schema => SchemaPath, module => ?MODULE, name => aha, prefix => <<"/test/arf">>}),
   [{<<"/test/arf/putFile">>, _, {aha, <<"/putFile">>}}] = Routes,
 
