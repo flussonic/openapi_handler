@@ -81,7 +81,7 @@ call(#{schema := Schema, uri := URI} = State, OperationId, Args0, Opts) when is_
           ContentMap = maps:get(content, ResponseSpec, #{}),
           Response1 = case maps:get(ResponseContentType, ContentMap, undefined) of 
             #{schema := ResponseSchema} when ResponseContentType == 'application/json' ->
-              JSON = jsx:decode(Bin, [return_maps]),
+              JSON = openapi_json:decode(Bin),
               Response = openapi_schema:process(JSON, #{schema => ResponseSchema, whole_schema => Schema}),
               Response;
             #{} when ResponseContentType == 'text/plain' orelse ResponseContentType == 'text/csv' ->
@@ -112,7 +112,7 @@ call(#{schema := Schema, uri := URI} = State, OperationId, Args0, Opts) when is_
         {ok, Code,ResponseHeaders,Bin} ->
           check_cors_presence(ResponseHeaders),
           Response = case proplists:get_value("content-type", ResponseHeaders) of
-            "application/json" -> try jsx:decode(Bin, [return_maps,{labels,atom}])
+            "application/json" -> try openapi_json:decode_with_atoms(Bin)
               catch _:_ -> Bin end;
             _ -> Bin
           end,
@@ -174,7 +174,7 @@ substitute_args2(_, URI, Query, Headers, Body, []) ->
   {URI#{query => uri_string:compose_query(Query)}, Headers, Body};
 
 substitute_args2(Parameters, URI, Query, Headers, _, [{json_body,Value}|Args]) ->
-  substitute_args2(Parameters, URI, Query, Headers++[{"Content-Type","application/json"}], encode_json_tolerant(Value), Args);
+  substitute_args2(Parameters, URI, Query, Headers++[{"Content-Type","application/json"}], openapi_json:encode(Value), Args);
 
 substitute_args2(Parameters, URI, Query, Headers, _, [{raw_body,Value}|Args]) ->
   substitute_args2(Parameters, URI, Query, Headers++[{"Content-Type","text/plain"}], Value, Args);
@@ -233,21 +233,6 @@ check_cors_presence(Headers) ->
       true;
     _Absent ->
       error([no_cors_headers,Headers])
-  end.
-
-
-
-encode_json_tolerant(Terms) ->
-  jsx:encode(Terms, [{error_handler,fun jsx_error_handler/3}]).
-
-jsx_error_handler(Terms, {parser, State, Handler, Stack}, Config) ->
-  case Terms of
-    [Val|Rest] when is_pid(Val) ->
-      ValBin = iolist_to_binary(io_lib:format("~p",[Val])),
-      jsx_parser:resume([ValBin|Rest], State, Handler, Stack, Config);
-    _ ->
-      % io:format("ERROR\n\nstate: ~p\nterms: ~p\n\n", [State, Terms]),
-      error({State,Terms})
   end.
 
 
