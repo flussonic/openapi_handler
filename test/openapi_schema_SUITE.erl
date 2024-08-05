@@ -86,8 +86,10 @@ null_in_array(_) ->
 
 
 discriminator(_) ->
-  FooType = #{type => <<"object">>, properties => #{dis => #{type => <<"string">>}, k1 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}}},
-  BarType = #{type => <<"object">>, properties => #{dis => #{type => <<"string">>}, k2 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}}},
+  FooProp = #{dis => #{type => <<"string">>}, k1 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}},
+  BarProp = #{dis => #{type => <<"string">>}, k2 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}},
+  FooType = #{type => <<"object">>, properties => FooProp},
+  BarType = #{type => <<"object">>, properties => BarProp},
   DType = #{
     oneOf => [#{'$ref' => <<"#/components/schemas/foo_t">>}, #{'$ref' => <<"#/components/schemas/bar_t">>}],
     discriminator => #{propertyName => <<"dis">>, mapping => #{foo => <<"#/components/schemas/foo_t">>, bar => <<"#/components/schemas/bar_t">>}}},
@@ -106,6 +108,13 @@ discriminator(_) ->
   %% Missing or invalid discriminator should lead an error
   {error, #{error := discriminator_missing}} = openapi_schema:process(#{k1 => 12, k2 => 34}, #{type => discr_t, whole_schema => DSchema}),
   {error, #{error := discriminator_unmapped}} = openapi_schema:process(#{dis => <<"nonsense">>, k1 => 12, k2 => 34}, #{type => discr_t, whole_schema => DSchema}),
+
+  FooType1 = FooType#{properties := FooProp#{k4 => #{type => <<"integer">>}, dis => #{type => <<"string">>, default => foo}}},
+  BarType1 = BarType#{properties := BarProp#{k5 => #{type => <<"integer">>}, dis => #{type => <<"string">>, default => foo}}},
+  DSchema1 = #{components => #{schemas => #{discr_t => DType, foo_t => FooType1, bar_t => BarType1}}},
+
+  Foo5 = openapi_schema:process(#{k1 => 12, k2 => 34, k4 => 56}, #{type => discr_t, whole_schema => DSchema1}),
+  [k1, k4] = lists:sort(maps:keys(Foo5)), % apply default
 
   ok.
 
