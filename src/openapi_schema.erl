@@ -193,6 +193,13 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
       E;
     (Field, #{} = Prop, Obj) ->
       FieldBin = atom_to_binary(Field,latin1),
+
+      RequiredKeys = get_required_keys(Schema, Opts),
+      IsReadOnly = maps:get(readOnly, Prop, false),
+      IsPrimary = maps:get('x-primary-key', Prop, false),
+      IsRequired = (lists:member(FieldBin, RequiredKeys) orelse IsPrimary),
+      IsWriteAccess = maps:get(access_type, Opts, read) == write,
+
       ExtractedValue = case Input of
         #{Field := Value_} ->
           {ok, Value_};
@@ -218,6 +225,9 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
         % Silently drop undefined values for non-nullable fields
         {ok, Null} when (Null == null orelse Null == undefined) andalso
           not NullableProp andalso not Patching ->
+          Obj;
+        % Silently drop read only fields with write access
+        {ok, _Value} when IsWriteAccess andalso IsReadOnly andalso (not IsRequired) ->
           Obj;
         {ok, Value} ->
           case encode3(Prop, Opts, Value, Path ++ [Field]) of
