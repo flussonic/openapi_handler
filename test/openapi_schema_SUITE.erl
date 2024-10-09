@@ -24,7 +24,8 @@ groups() ->
       validate_scalar_as_object,
       check_explain,
       check_explain_on_error,
-      one_of_integer_const
+      one_of_integer_const,
+      filter_read_only_props
   ]}
   ].
 
@@ -213,4 +214,15 @@ one_of_integer_const(_) ->
     name := <<"one_of_integer_const">>,
     inputs := [#{apts := 1}, #{apts := 3}, #{apts := video}]
   } = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true, explain => [required]}),
+  ok.
+
+filter_read_only_props(_) ->
+  Schema = persistent_term:get({openapi_handler_schema,test_openapi}),
+  Json = #{
+    <<"name">> => <<"stream">>,
+    <<"stats">> => #{<<"id">> => <<"61893ba6-07b3-431b-b2f7-716ac1643953">>}},
+
+  #{name := <<"stream">>} = Spec = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, access_type => write}),
+  false = maps:is_key(spec,Spec),
+  #{name := <<"stream">>, stats := #{id := <<"61893ba6-07b3-431b-b2f7-716ac1643953">>}} = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema}),
   ok.
