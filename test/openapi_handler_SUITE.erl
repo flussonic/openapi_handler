@@ -45,8 +45,8 @@ init_per_suite(Config) ->
   {ok, _} = application:ensure_all_started(cowboy),
   {ok, _} = application:ensure_all_started(lhttpc),
 
-  PetstorePath = filename:join(code:lib_dir(openapi_handler),"test/redocly-petstore.yaml"),
-  TestSchemaPath = filename:join(code:lib_dir(openapi_handler),"test/test_schema.yaml"),
+  PetstorePath = filename:join(code:lib_dir(openapi_handler),"test/redocly-petstore.json"),
+  TestSchemaPath = filename:join(code:lib_dir(openapi_handler),"test/test_schema.json"),
   PetstoreRoutes = openapi_handler:routes(#{
     schema => PetstorePath,
     prefix => <<"/test/yml">>,
@@ -164,7 +164,7 @@ non_exist_key(_) ->
   #{<<"extra_keys">> := [<<"non_exist">>],
     <<"input1">> := #{<<"firstName">> := <<"Anna">>,<<"non_exist">> := <<"some">>},
     <<"name">> := <<"request_body">>,
-    <<"while">> := <<"parsing_parameters">>} = jsx:decode(Res),
+    <<"while">> := <<"parsing_parameters">>} = json:decode(Res),
   ok.
 
 non_exist_key_drop(_) ->
@@ -258,7 +258,7 @@ uploadFiles(#{files := Files}) ->
   [{<<"upload_name1.txt">>,<<"11\n">>},{<<"file2.txt">>,<<"22\n">>}] = Files,
   #{}.
 multiple_file_upload(_) ->
-  SchemaPath = code:lib_dir(openapi_handler) ++ "/test/multiple-upload.yaml",
+  SchemaPath = code:lib_dir(openapi_handler) ++ "/test/multiple-upload.json",
   Routes = openapi_handler:routes(#{schema => SchemaPath, module => ?MODULE, name => mu, prefix => <<"/test/mu">>}),
   [{<<"/test/mu/uploadFiles">>, _, {mu, <<"/uploadFiles">>}}] = Routes,
 
@@ -276,23 +276,18 @@ json_array_error(_) ->
 json_array_ok(_) ->
   Array = [1,2,3],
   Res = openapi_client:call(test_schema_api, jsonArray, #{json_body => Array}),
-  #{<<"json_res">> := <<"1">>} = jsx:decode(Res),
+  #{<<"json_res">> := <<"1">>} = json:decode(Res),
   ok.
 
 putFile(#{req := Req, '$cowboy_req' := CowboyReq}) ->
-  case openapi_handler:choose_module() of
-    openapi_handler ->
-      <<"PUT">> = cowboy_req:method(CowboyReq);
-    openapi_handler_legacy ->
-      skip
-  end,
+  <<"PUT">> = cowboy_req:method(CowboyReq),
   Body = <<"{\"size\":100}">>,
   Req1 = reply(200, #{<<"content-length">> => byte_size(Body), <<"content-type">> => <<"application/json">>}, Body, Req),
   {done, Req1}.
 
 done_request(_) ->
   register(openapi_handler_SUITE_log_call_server, self()),
-  SchemaPath = code:lib_dir(openapi_handler) ++ "/test/done_req.yaml",
+  SchemaPath = code:lib_dir(openapi_handler) ++ "/test/done_req.json",
   Routes = openapi_handler:routes(#{schema => SchemaPath, module => ?MODULE, name => put, prefix => <<"/test/put">>}),
   [{<<"/test/put/putFile">>, _, {put, <<"/putFile">>}}] = Routes,
   _ = fake_request(put, <<"PUT">>, <<"/putFile">>, #{}),
@@ -305,7 +300,7 @@ done_request(_) ->
   ok.
 
 autorize_handler_args(_) ->
-  SchemaPath = code:lib_dir(openapi_handler) ++ "/test/done_req.yaml",
+  SchemaPath = code:lib_dir(openapi_handler) ++ "/test/done_req.json",
   Routes = openapi_handler:routes(#{schema => SchemaPath, module => ?MODULE, name => aha, prefix => <<"/test/arf">>}),
   [{<<"/test/arf/putFile">>, _, {aha, <<"/putFile">>}}] = Routes,
 
