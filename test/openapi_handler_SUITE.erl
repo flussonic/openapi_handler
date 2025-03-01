@@ -7,7 +7,7 @@ all() ->
 
 groups() ->
   [
-   {routes, [yaml_routes, json_routes]},
+   {routes, [json_routes]},
    {handling, [
      trivial,
      non_existing_api,
@@ -36,15 +36,9 @@ groups() ->
    ]}
   ].
 
--ifdef(legacy).
-start_http(Routes, ApiName) ->
-  cowboy:start_http(ApiName, 1, [{port, 0}],
-    [{env, [{dispatch, cowboy_router:compile([{'_', Routes}])}]}]).
--else.
 start_http(Routes, ApiName) ->
   cowboy:start_clear(ApiName, [{port, 0}],
     #{env => #{dispatch => cowboy_router:compile([{'_', Routes}])}}).
--endif.
 
 
 init_per_suite(Config) ->
@@ -108,15 +102,6 @@ end_per_suite(Config) ->
 %
 % Here, in routes group we ensure openapi_handler:routes/1 returns a valid list
 % of Cowboy matching rules in proper order (longer path first)
-yaml_routes(_) ->
-  SchemaPath = code:lib_dir(openapi_handler) ++ "/test/redocly-petstore.yaml",
-  Routes = openapi_handler:routes(#{schema => SchemaPath, module => ?MODULE, name => petstore_yaml, prefix => <<"/test/yml">>}),
-  [{<<"/test/yml/user/logout">>,_,{petstore_yaml,<<"/user/logout">>}},
-   _, _, _,
-   {<<"/test/yml/user/:username">>,_,{petstore_yaml,<<"/user/:username">>}},
-   {<<"/test/yml/user">>,_,{petstore_yaml,<<"/user">>}}
-   |_] = Routes,
-  ok.
 
 json_routes(_) ->
   SchemaPath = code:lib_dir(openapi_handler) ++ "/test/redocly-big-openapi.json",

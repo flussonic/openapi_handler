@@ -206,9 +206,7 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
         #{FieldBin := Value_} ->
           {ok, Value_};
         #{} ->
-          undefined;
-        _ ->
-          error(#{input => Input, field => Field, prop => Prop, obj => Obj, path => Path})
+          undefined
       end,
       ApplyDefaults = maps:get(apply_defaults, Opts, false),
       Default = case Prop of

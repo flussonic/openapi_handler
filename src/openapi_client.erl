@@ -126,8 +126,7 @@ call(#{schema := Schema, uri := URI} = State, OperationId, Args0, Opts) when is_
 
 call(#{} = State, OperationId, Args, Opts) ->
   case load(State) of
-    #{} = State1 -> call(State1, OperationId, Args, Opts);
-    {error, E} -> {error, E}
+    #{} = State1 -> call(State1, OperationId, Args, Opts)
   end.
 
 

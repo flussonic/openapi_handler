@@ -3,7 +3,7 @@
 
 
 -export([init/2, handle/2, terminate/3]).
--export([routes/1, load_schema/2, choose_module/0]).
+-export([routes/1, load_schema/2]).
 -export([read_schema/1]).
 -export([routes_sort/1]). % for tests
 
@@ -14,8 +14,6 @@
 routes(#{schema := SchemaPath, module := Module, name := Name, prefix := Prefix} = Config) ->
   #{} = Schema = load_schema(SchemaPath, Name),
   SchemaOpts = get_schema_opts(Config),
-  HandlerModule = choose_module(),
-
   #{paths := Paths} = Schema,
   Routes = lists:map(fun({Path,PathSpec}) ->
     <<"/", _/binary>> = CowboyPath = re:replace(atom_to_list(Path), "{([^\\}]+)}", ":\\1",[global,{return,binary}]),
@@ -27,23 +25,12 @@ routes(#{schema := SchemaPath, module := Module, name := Name, prefix := Prefix}
     % It is too bad to pass all this stuff through cowboy options because it starts suffering
     % from GC on big state. Either ETS, either persistent_term, either compilation of custom code
     persistent_term:put({openapi_handler_route,Name,CowboyPath}, PathSpec1#{name => Name, module => Module, schema_opts => SchemaOpts}),
-    {<<Prefix/binary, CowboyPath/binary>>, HandlerModule, {Name,CowboyPath}}
+    {<<Prefix/binary, CowboyPath/binary>>, ?MODULE, {Name,CowboyPath}}
   end, maps:to_list(Paths)),
   % After sorting, bindings (starting with ":") must be after constant path segments, so generic routes only work after specific ones.
   % E.g. "/api/users/admin" must be before "/api/users/:id"
   % Thus special sorting function
   routes_sort(Routes).
-
-choose_module() ->
-  try
-    % Check if cowboy uses modern Req (map)
-    1234 = cowboy_req:port(#{port => 1234}),
-    ?MODULE
-  catch
-    error:{badrecord,_}:_ ->
-      % cowboy uses record for Req, use legacy wrapper
-      openapi_handler_legacy
-  end.
 
 
 prepare_operation_fm(_M, #{operationId := OperationId_} = Operation, Parameters) ->
@@ -93,30 +80,9 @@ read_schema(SchemaPath) ->
     {ok, Bin_} -> Bin_;
     {error, E} -> error({E,SchemaPath})
   end,
-  Format = case filename:extension(iolist_to_binary(SchemaPath)) of
-    <<".yaml">> -> yaml;
-    <<".yml">> -> yaml;
-    <<".json">> -> json;
-    _ -> json
-  end,
-  DecodedSchema = case Format of
-    json ->
-      openapi_json:decode_with_atoms(Bin);
-    yaml ->
-      application:ensure_all_started(yamerl),
-      [Decoded0] = yamerl:decode(Bin, [{erlang_atom_autodetection, false}, {map_node_format, map}, {str_node_as_binary, true}]),
-      map_keys_to_atom(Decoded0)
-  end,
+  DecodedSchema = openapi_json:decode_with_atoms(Bin),
   DecodedSchema.
 
-
-%% yamerl lacks an option to make all map keys atom, but keep values binary. So, we need this converter.
-map_keys_to_atom(#{} = Map) ->
-  maps:fold(fun(K, V, Acc) -> Acc#{binary_to_atom(K, utf8) => map_keys_to_atom(V)} end, #{}, Map);
-map_keys_to_atom(List) when is_list(List) ->
-  [map_keys_to_atom(E) || E <- List];
-map_keys_to_atom(Value) ->
-  Value.
 
 
 

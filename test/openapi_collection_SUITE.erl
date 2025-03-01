@@ -30,7 +30,7 @@ groups() ->
 
 
 init_per_suite(Config) ->
-  SchemaPath = code:lib_dir(openapi_handler, test) ++ "/flussonic-230127.json",
+  SchemaPath = code:lib_dir(openapi_handler) ++ "/test/flussonic-230127.json",
   openapi_handler:load_schema(SchemaPath, test_openapi),
   Config.
 

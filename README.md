@@ -12,7 +12,7 @@ and converts request parameters to Erlang types.
 First, you need to compile cowboy routes for your schema.  
 ```erlang
   PetstoreRoutes = openapi_handler:routes(#{
-    schema => PetstorePath,         % path/to/your/schema.{json,yaml}
+    schema => PetstorePath,         % path/to/your/schema.{json}
     prefix => <<"/api/prefix">>,    % HTTP path prefix for your API
     name => petstore_server_api,    % API identifier, must be unique
     module => petstore_impl         % A module with functions to call
