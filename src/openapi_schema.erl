@@ -125,6 +125,10 @@ encode3(#{anyOf := Choices}, Opts, Input, Path) ->
   Encoded = F(Choices, #{error => unmatched_anyOf, path => Path}),
   check_extra_keys(Input, Encoded, Opts);
 
+% Skip discriminator resolving during of query check
+encode3(#{oneOf := _, discriminator := _} = Schema, #{query := true} = Opts, Input, Path) ->
+  encode3(maps:without([discriminator], Schema), Opts, Input, Path);
+
 encode3(#{oneOf := Types, discriminator := #{propertyName := DKey, mapping := DMap}}, Opts, Input, Path) ->
   % If possible, get the discriminator value as atom (for lookup in mapping)
   ADKey = binary_to_atom(DKey),

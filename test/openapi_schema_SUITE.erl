@@ -110,6 +110,10 @@ discriminator(_) ->
   {error, #{error := discriminator_missing}} = openapi_schema:process(#{k1 => 12, k2 => 34}, #{type => discr_t, whole_schema => DSchema}),
   {error, #{error := discriminator_unmapped}} = openapi_schema:process(#{dis => <<"nonsense">>, k1 => 12, k2 => 34}, #{type => discr_t, whole_schema => DSchema}),
 
+  %% In case of query check do not fall on discriminator issues
+  #{} = openapi_schema:process(#{k1 => 12, k2 => 34}, #{type => discr_t, query => true, whole_schema => DSchema}),
+  #{} = openapi_schema:process(#{dis => <<"nonsense">>, k1 => 12, k2 => 34}, #{type => discr_t, query => true, whole_schema => DSchema}),
+
   FooType1 = FooType#{properties := FooProp#{k4 => #{type => <<"integer">>}, dis => #{type => <<"string">>, default => foo}}},
   BarType1 = BarType#{properties := BarProp#{k5 => #{type => <<"integer">>}, dis => #{type => <<"string">>, default => foo}}},
   DSchema1 = #{components => #{schemas => #{discr_t => DType, foo_t => FooType1, bar_t => BarType1}}},
