@@ -179,7 +179,7 @@ non_exist_key(_) ->
   #{<<"extra_keys">> := [<<"non_exist">>],
     <<"input1">> := #{<<"firstName">> := <<"Anna">>,<<"non_exist">> := <<"some">>},
     <<"name">> := <<"request_body">>,
-    <<"while">> := <<"parsing_parameters">>} = jsx:decode(Res),
+    <<"while">> := <<"parsing_parameters">>} = openapi_json:decode(Res),
   ok.
 
 non_exist_key_drop(_) ->
@@ -291,7 +291,7 @@ json_array_error(_) ->
 json_array_ok(_) ->
   Array = [1,2,3],
   Res = openapi_client:call(test_schema_api, jsonArray, #{json_body => Array}),
-  #{<<"json_res">> := <<"1">>} = jsx:decode(Res),
+  #{<<"json_res">> := <<"1">>} = openapi_json:decode(Res),
   ok.
 
 putFile(#{req := Req, '$cowboy_req' := CowboyReq}) ->
