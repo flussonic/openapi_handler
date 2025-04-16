@@ -415,6 +415,13 @@ encode3(#{type := <<"boolean">>}, #{auto_convert := Convert}, Input, Path) ->
     _ -> {error, #{error => not_boolean, path => Path}}
   end;
 
+encode3(#{type := null}, #{}, Input, Path) ->
+  case Input of
+    null -> undefined;
+    undefined -> undefined;
+    _ -> {error, #{error => not_null, path => Path}}
+  end;
+
 encode3(#{type := [_| _] = Types} = Schema, Opts, Input, Path) ->
   encode3_multi_types(Types, Schema, Opts, Input, Path).
 
