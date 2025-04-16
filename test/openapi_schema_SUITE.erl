@@ -90,11 +90,14 @@ null_in_array(_) ->
 nullable_by_oneof(_) ->
   % OAS 3.1 supports all JSON types https://spec.openapis.org/oas/v3.1.0.html#data-types
   % Also 'nullable' is invalid in OAS 3.1, and oneOf with {type: null} is suggested instead
-  Props = #{nk => #{oneOf => [#{type => string}, #{type => null}]}, k2 => #{type => <<"integer">>, default => 42}},
+  Props = #{nk => #{oneOf => [#{type => <<"string">>}, #{type => null}]}, k2 => #{type => <<"integer">>, default => 42}},
   Schema = #{type => <<"object">>, properties => Props},
   % There was a bug where null value caused extra_keys error
   Expect1 = #{nk => undefined},
   Expect1 = openapi_schema:process(#{nk => null}, #{schema => Schema, extra_obj_key => error}),
+  Expect1s = #{nk => <<"hello">>},
+  Expect1s = openapi_schema:process(#{nk => <<"hello">>}, #{schema => Schema, extra_obj_key => error}),
+  {error, _} = openapi_schema:process(#{nk => 42}, #{schema => Schema, extra_obj_key => error}),
   % Normalize the given object with a nulled key as much as possible
   Expect2 = #{nk => undefined, k2 => 42},
   Expect2 = openapi_schema:process(#{nk => null}, #{schema => Schema, extra_obj_key => error, apply_defaults => true}),
@@ -142,9 +145,9 @@ regexp_pattern(_) ->
 
   {error, #{error := nomatch_pattern}} = openapi_schema:process(<<"123">>, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
   % {error, #{error := not_string}} = openapi_schema:process(abc, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
-  abc = openapi_schema:process(abc, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
+  <<"abc">> = openapi_schema:process(abc, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
   <<"abc">> =  openapi_schema:process(<<"abc">>, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
-  abc =  openapi_schema:process(abc, #{schema => #{type => <<"string">>}}),
+  <<"abc">> =  openapi_schema:process(abc, #{schema => #{type => <<"string">>}}),
 
   ok.
 
