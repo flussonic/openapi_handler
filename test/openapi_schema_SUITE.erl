@@ -13,6 +13,7 @@ groups() ->
       extra_keys_error,
       extra_keys_drop,
       null_in_array,
+      nullable_by_oneof,
       discriminator,
       non_object_validate,
       regexp_pattern,
@@ -85,6 +86,19 @@ null_in_array(_) ->
                  #{schema => #{type => <<"array">>,items => #{type => <<"string">>, nullable => true}}}),
   ok.
 
+
+nullable_by_oneof(_) ->
+  % OAS 3.1 supports all JSON types https://spec.openapis.org/oas/v3.1.0.html#data-types
+  % Also 'nullable' is invalid in OAS 3.1, and oneOf with {type: null} is suggested instead
+  Props = #{nk => #{oneOf => [#{type => string}, #{type => null}]}, k2 => #{type => <<"integer">>, default => 42}},
+  Schema = #{type => <<"object">>, properties => Props},
+  % There was a bug where null value caused extra_keys error
+  Expect1 = #{nk => undefined},
+  Expect1 = openapi_schema:process(#{nk => null}, #{schema => Schema, extra_obj_key => error}),
+  % Normalize the given object with a nulled key as much as possible
+  Expect2 = #{nk => undefined, k2 => 42},
+  Expect2 = openapi_schema:process(#{nk => null}, #{schema => Schema, extra_obj_key => error, apply_defaults => true}),
+  ok.
 
 discriminator(_) ->
   FooProp = #{dis => #{type => <<"string">>}, k1 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}},

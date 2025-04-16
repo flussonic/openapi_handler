@@ -216,7 +216,14 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
         _ -> #{}
       end,
 
-      NullableProp = maps:get(nullable, Prop, undefined) == true,
+      NullableProp = case Prop of
+        #{nullable := true} ->
+          true;
+        #{oneOf := OneOf} ->
+          lists:any(fun(#{type := null}) -> true; (_) -> false end, OneOf);
+        #{} ->
+          false
+      end,
       Patching = maps:get(patch, Opts, undefined) == true,
       UpdatedObj = case ExtractedValue of
         {ok, NullFlag} when Query andalso (NullFlag == null orelse NullFlag == not_null) ->
@@ -230,7 +237,7 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
         {ok, _Value} when IsWriteAccess andalso IsReadOnly andalso (not IsRequired) ->
           Obj;
         {ok, Value} ->
-          case encode3(Prop, Opts, Value, Path ++ [Field]) of
+          case encode3(Prop#{nullable => NullableProp}, Opts, Value, Path ++ [Field]) of
             {error, _} = E ->
               E;
             Value1 when Query andalso (is_number(Value1) orelse is_atom(Value1) orelse is_binary(Value1)) ->
