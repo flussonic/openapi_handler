@@ -142,9 +142,9 @@ regexp_pattern(_) ->
 
   {error, #{error := nomatch_pattern}} = openapi_schema:process(<<"123">>, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
   % {error, #{error := not_string}} = openapi_schema:process(abc, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
-  abc = openapi_schema:process(abc, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
+  <<"abc">> = openapi_schema:process(abc, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
   <<"abc">> =  openapi_schema:process(<<"abc">>, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
-  abc =  openapi_schema:process(abc, #{schema => #{type => <<"string">>}}),
+  <<"abc">> =  openapi_schema:process(abc, #{schema => #{type => <<"string">>}}),
 
   ok.
 
