@@ -220,7 +220,7 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
         #{nullable := true} ->
           true;
         #{oneOf := OneOf} ->
-          lists:any(fun(#{type := null}) -> true; (_) -> false end, OneOf);
+          lists:any(fun(#{type := <<"null">>}) -> true; (_) -> false end, OneOf);
         #{} ->
           false
       end,
@@ -415,7 +415,7 @@ encode3(#{type := <<"boolean">>}, #{auto_convert := Convert}, Input, Path) ->
     _ -> {error, #{error => not_boolean, path => Path}}
   end;
 
-encode3(#{type := null}, #{}, Input, Path) ->
+encode3(#{type := <<"null">>}, #{}, Input, Path) ->
   case Input of
     null -> undefined;
     undefined -> undefined;
