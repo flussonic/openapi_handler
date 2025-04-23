@@ -1,6 +1,7 @@
 -module(openapi_schema).
 -include_lib("kernel/include/logger.hrl").
 
+-export([load_schema/2]).
 -export([process/2]).
 
 
@@ -19,6 +20,14 @@
 -define(AVAILABLE_EXPLAIN_KEYS, [required]).
 
 
+load_schema(Schema, Name) ->
+  #{components := #{schemas := Schemas}} = Schema,
+  [persistent_term:put({openapi_handler_schema,Name,atom_to_binary(Type,latin1)}, prepare_type(TypeSchema)) ||
+    {Type,TypeSchema} <- maps:to_list(Schemas)],
+  persistent_term:put({openapi_handler_schema,Name},Schema),
+  Schema.
+
+
 process(Input, #{} = Opts) ->
   maps:map(fun
     (schema,_) -> ok;
@@ -27,6 +36,7 @@ process(Input, #{} = Opts) ->
     (name,_) -> ok;
     (array_convert,Flag) when Flag == true; Flag == false -> ok;
     (auto_convert,Flag) when Flag == true; Flag == false -> ok;
+    (validators,#{} = V) -> V;
     (query,Flag) when Flag == true; Flag == false -> ok;
     (apply_defaults,Flag) when Flag == true; Flag == false -> ok;
     (patch,Flag) when Flag == true; Flag == false -> ok;
@@ -54,12 +64,53 @@ process(Input, #{} = Opts) ->
     required_obj_keys => drop,
     access_type => read
   },
-  case encode3(Schema, maps:merge(DefaultOpts,Opts), Input, []) of
+  Validators = maps:merge(default_validators(), maps:get(validators, Opts, #{})),
+  FinalOpts = (maps:merge(DefaultOpts,Opts))#{validators => Validators},
+  case encode3(Schema, FinalOpts, Input, []) of
     {error, Error} ->
       {error, Error};
     R ->
       R
   end.
+
+
+
+prepare_type(#{allOf := Types} = Type0) ->
+  Type0#{allOf := [prepare_type(T) || T <- Types]};
+prepare_type(#{anyOf := Types} = Type0) ->
+  Type0#{anyOf := [prepare_type(T) || T <- Types]};
+prepare_type(#{oneOf := Types} = Type0) ->
+  Type0#{oneOf := [prepare_type(T) || T <- Types]};
+prepare_type(#{type := <<"object">>, properties := Props} = Type0) ->
+  Type0#{properties => maps:map(fun(_, T) -> prepare_type(T) end, Props)};
+prepare_type(#{} = Type0) ->
+  % Convert format name to atom. This matches validators syntax
+  Type1 = case Type0 of
+    #{format := BinFormat} when is_binary(BinFormat) ->
+      Type0#{format := binary_to_atom(BinFormat)};
+    #{} ->
+      Type0
+  end,
+  % precompile patterns
+  Type2 = case Type1 of
+    #{pattern := Pattern} ->
+      {ok, MP} = re:compile(Pattern, []),
+      Type1#{pattern := MP};
+    #{} ->
+      Type1
+  end,
+  Type2.
+
+
+% FIXME: Decide whether default formats should be supported by this library.
+% - JSON Schema Validation formats (https://datatracker.ietf.org/doc/html/draft-bhutton-json-schema-validation-00#section-7.3)
+% - OAS (https://spec.openapis.org/oas/v3.1.0.html#data-types)
+% JSON schema defines many non-trivial formats (e.g. RFC 3339 date-time, idn-email, iri-reference, etc.),
+% and supporting all of them properly may require lots of maintenance work.
+% Formats added by OAS are quite simple though.
+default_validators() ->
+  #{}.
+
 
 encode3(_, #{query := true}, not_null, _) ->
   not_null;
@@ -378,7 +429,7 @@ encode3(#{enum := Choices, type := <<"string">>}, #{auto_convert := Convert}, In
     false -> {error, #{unknown_enum_option => Input, path => Path, available => Choices}}
   end;
 
-encode3(#{type := <<"string">>} = Spec, #{auto_convert := Convert}, Input, Path) ->
+encode3(#{type := <<"string">>} = Spec, #{auto_convert := Convert} = Options, Input, Path) ->
   {Input1, InputForValidation} = case Input of
     _ when is_binary(Input) -> {Input, Input};
     _ when is_atom(Input) andalso Convert -> {atom_to_binary(Input), atom_to_binary(Input)};
@@ -394,17 +445,22 @@ encode3(#{type := <<"string">>} = Spec, #{auto_convert := Convert}, Input, Path)
           {error, #{error => too_short, path => Path, input => Input, min_length => MinLength}};
         #{maxLength := MaxLength} when size(InputForValidation) > MaxLength ->
           {error, #{error => too_long, path => Path, input => Input, max_length => MaxLength}};
-        #{pattern := RegExp} ->
-          case re:run(InputForValidation, RegExp) of
-            {match, _} ->
-              Input1;
-            nomatch ->
-              {error, #{error => nomatch_pattern, path => Path, input => Input1, pattern => RegExp}}
-          end;
         #{} ->
-          Input1
+          Format = maps:get(format, Spec, undefined),
+          Validators = maps:get(validators, Options),
+          FormatChecked = validate_string_format(InputForValidation, Format, maps:get(Format, Validators, undefined), Convert),
+          PatternChecked = validate_string_pattern(FormatChecked, maps:get(pattern, Spec, undefined)),
+          case PatternChecked of
+            {error, Error} ->
+              {error, Error#{path => Path, input => Input1}};
+            <<_/binary>> when Convert ->
+              PatternChecked;
+            <<_/binary>> ->
+              Input1
+          end
       end
   end;
+
 
 encode3(#{type := <<"boolean">>}, #{auto_convert := Convert}, Input, Path) ->
   case Input of
@@ -442,6 +498,33 @@ encode_number(#{maximum := Max}, Input, Path) when Input > Max ->
 
 encode_number(_Schema, Input, _Path) ->
   Input.
+
+
+validate_string_format(Input, _, undefined, _) ->
+  Input;
+validate_string_format(Input, Format, Validator, Convert) ->
+  case Validator(Input) of
+    {ok, Converted} when (not Convert) andalso Converted /= Input ->
+      % The value is mostly ok, but needs to be converted
+      {error, #{error => needs_convertation, format => Format}};
+    {ok, Input2} ->
+      Input2;
+    {error, FmtError} ->
+      Err0 = #{error => wrong_format, format => Format},
+      {error, maps:merge(Err0, FmtError)}
+  end.
+
+validate_string_pattern({error, _} = Error, _) ->
+  Error;
+validate_string_pattern(Input, undefined) ->
+  Input;
+validate_string_pattern(Input, RegExp) ->
+  case re:run(Input, RegExp) of
+    {match, _} ->
+      Input;
+    nomatch ->
+      {error, #{error => nomatch_pattern, pattern => RegExp}}
+  end.
 
 
 check_required_keys(#{} = Encoded, #{} = Schema, #{required_obj_keys := error} = Opts) ->

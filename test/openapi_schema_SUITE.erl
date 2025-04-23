@@ -17,6 +17,7 @@ groups() ->
       discriminator,
       non_object_validate,
       regexp_pattern,
+      external_validators,
       min_max_length,
       max_items_array,
       max_items_object,
@@ -34,6 +35,8 @@ groups() ->
 init_per_suite(Config) ->
   SchemaPath = code:lib_dir(openapi_handler) ++ "/test/flussonic-230127.json",
   openapi_handler:load_schema(SchemaPath, test_openapi),
+  BigOpenapiPath = code:lib_dir(openapi_handler) ++ "/test/redocly-big-openapi.json",
+  openapi_handler:load_schema(BigOpenapiPath, big_openapi),
   Config.
 
 end_per_suite(Config) ->
@@ -148,6 +151,48 @@ regexp_pattern(_) ->
   <<"abc">> = openapi_schema:process(abc, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
   <<"abc">> =  openapi_schema:process(<<"abc">>, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
   <<"abc">> =  openapi_schema:process(abc, #{schema => #{type => <<"string">>}}),
+
+  % pattern in loaded schema works well too (regexp is pre-compiled on load)
+  #{url := <<"http://foobar/">>} = openapi_schema:process(
+    #{name => <<"aaa">>, url => <<"http://foobar/">>}, #{name => test_openapi, type => event_sink_config}),
+  {error, #{error := nomatch_pattern}} = openapi_schema:process(
+    #{name => <<"aaa">>, url => <<"nonsense://foobar/">>}, #{name => test_openapi, type => event_sink_config}),
+
+  ok.
+
+
+no_space_validator(<<" ", _/binary>>) ->
+  {error, #{detail => leading_space}};
+no_space_validator(Input) ->
+  {ok, binary:replace(Input, <<" ">>, <<"_">>, [global])}.
+
+external_validators(_) ->
+  Schema = #{type => <<"string">>, format => no_space},
+  Validators = #{no_space => fun no_space_validator/1},
+  % Baseline
+  <<" ab cd">> = openapi_schema:process(<<" ab cd">>, #{schema => Schema}),
+  % auto_convert by default
+  <<"ab_cd">> = openapi_schema:process(<<"ab cd">>, #{schema => Schema, validators => Validators}),
+  % Disabled auto_convert -- error instead of converted value
+  {error, Err1} = openapi_schema:process(<<"ab cd">>, #{schema => Schema, validators => Validators, auto_convert => false}),
+  #{error := needs_convertation, format := no_space} = Err1,
+  % Proper value passes validation even witht auto_convert disabled
+  <<"ab_cd">> = openapi_schema:process(<<"ab_cd">>, #{schema => Schema, validators => Validators, auto_convert => false}),
+  % Improper value
+  {error, Err2} = openapi_schema:process(<<" ab cd">>, #{schema => Schema, validators => Validators}),
+  #{error := wrong_format, format := no_space, detail := leading_space} = Err2,
+
+  % format validators work with loaded schema
+  % big_openapi.digest is a composition of allOf and object, so it needs schema to be properly prepared
+  #{password := <<"ab_cd">>} = openapi_schema:process(
+    #{username => <<"Joe">>, password => <<"ab cd">>}, #{name => big_openapi, type => digest, validators => #{password => fun no_space_validator/1}}),
+
+  % format validator and pattern work simultaneously
+  Schema2 = #{type => <<"string">>, format => no_space, pattern => <<"^[a-z]+$">>},
+  {error, Err3} = openapi_schema:process(<<" ab cd">>, #{schema => Schema2, validators => Validators}),
+  #{error := wrong_format} = Err3,
+  {error, Err4} = openapi_schema:process(<<"12 cd">>, #{schema => Schema2, validators => Validators}),
+  #{error := nomatch_pattern} = Err4,
 
   ok.
 
