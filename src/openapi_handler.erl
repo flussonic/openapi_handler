@@ -78,11 +78,7 @@ path_sort({Path1,_,_},{Path2,_,_}) ->
 
 
 load_schema(#{} = Schema, Name) ->
-  #{components := #{schemas := Schemas}} = Schema,
-  [persistent_term:put({openapi_handler_schema,Name,atom_to_binary(Type,latin1)}, TypeSchema) ||
-    {Type,TypeSchema} <- maps:to_list(Schemas)],
-  persistent_term:put({openapi_handler_schema,Name},Schema),
-  Schema;
+  openapi_schema:load_schema(Schema, Name);
 
 load_schema(SchemaPath, Name) when is_list(SchemaPath) orelse is_binary(SchemaPath) ->
   DecodedSchema = read_schema(SchemaPath),
