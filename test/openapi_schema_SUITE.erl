@@ -19,7 +19,7 @@ groups() ->
       regexp_pattern,
       external_validators,
       min_max_length,
-      max_items_array,
+      min_max_items_array,
       max_items_object,
       required_keys,
       required_keys_filter,
@@ -205,10 +205,24 @@ min_max_length(_) ->
   ok.
 
 
-max_items_array(_) ->
+min_max_items_array(_) ->
+  % one limit defined
   {error, #{error := too_many_items}} = openapi_schema:process([1,2,3],
     #{schema => #{type => <<"array">>, maxItems => 2, items => #{type => <<"integer">>}}}),
+  {error, #{error := too_few_items}} = openapi_schema:process([1],
+    #{schema => #{type => <<"array">>, minItems => 2, items => #{type => <<"integer">>}}}),
+
+  % both limits defined
+  {error, #{error := too_few_items}} = openapi_schema:process([],
+    #{schema => #{type => <<"array">>, minItems => 1, maxItems => 2, items => #{type => <<"integer">>}}}),
+  [1] = openapi_schema:process([1],
+    #{schema => #{type => <<"array">>, minItems => 1, maxItems => 2, items => #{type => <<"integer">>}}}),
+  [1, 2] = openapi_schema:process([1, 2],
+    #{schema => #{type => <<"array">>, minItems => 1, maxItems => 2, items => #{type => <<"integer">>}}}),
+  {error, #{error := too_many_items}} = openapi_schema:process([1,2,3],
+    #{schema => #{type => <<"array">>, minItems => 1, maxItems => 2, items => #{type => <<"integer">>}}}),
   ok.
+
 
 max_items_object(_) ->
   {error, #{error := too_many_items}} = openapi_schema:process(#{a => 1,b => 2, c => 3}, 
