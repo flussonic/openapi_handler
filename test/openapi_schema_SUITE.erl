@@ -3,7 +3,8 @@
 
 all() ->
   [
-    {group, process}
+    {group, process},
+    {group, introspection}
   ].
 
 groups() ->
@@ -30,7 +31,10 @@ groups() ->
       check_explain_on_error,
       one_of_integer_const,
       filter_read_only_props
-  ]}
+    ]},
+    {introspection, [], [
+      fetch_type
+    ]}
   ].
 
 
@@ -299,4 +303,10 @@ filter_read_only_props(_) ->
   #{name := <<"stream">>} = Spec = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, access_type => write}),
   false = maps:is_key(spec,Spec),
   #{name := <<"stream">>, stats := #{id := <<"61893ba6-07b3-431b-b2f7-716ac1643953">>}} = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema}),
+  ok.
+
+
+
+fetch_type(_) ->
+  #{allOf := _} = openapi_schema:type(test_openapi, stream_config),
   ok.
