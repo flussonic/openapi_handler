@@ -3,7 +3,8 @@
 
 all() ->
   [
-    {group, process}
+    {group, process},
+    {group, introspection}
   ].
 
 groups() ->
@@ -20,7 +21,9 @@ groups() ->
       external_validators,
       min_max_length,
       max_items_array,
+      min_items_array,
       max_items_object,
+      min_items_object,
       required_keys,
       required_keys_filter,
       validate_scalar_as_object,
@@ -28,7 +31,10 @@ groups() ->
       check_explain_on_error,
       one_of_integer_const,
       filter_read_only_props
-  ]}
+    ]},
+    {introspection, [], [
+      fetch_type
+    ]}
   ].
 
 
@@ -210,9 +216,19 @@ max_items_array(_) ->
     #{schema => #{type => <<"array">>, maxItems => 2, items => #{type => <<"integer">>}}}),
   ok.
 
+min_items_array(_) ->
+  {error, #{error := too_few_items}} = openapi_schema:process([1],
+    #{schema => #{type => <<"array">>, minItems => 2, items => #{type => <<"integer">>}}}),
+  ok.
+
 max_items_object(_) ->
   {error, #{error := too_many_items}} = openapi_schema:process(#{a => 1,b => 2, c => 3}, 
     #{schema => #{type => <<"object">>, maxItems => 2, additionalProperties => #{type => integer}}}),
+  ok.
+
+min_items_object(_) ->
+  {error, #{error := too_few_items}} = openapi_schema:process(#{a => 1},
+    #{schema => #{type => <<"object">>, minItems => 2, additionalProperties => #{type => integer}}}),
   ok.
 
 required_keys(_) ->
@@ -287,4 +303,10 @@ filter_read_only_props(_) ->
   #{name := <<"stream">>} = Spec = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, access_type => write}),
   false = maps:is_key(spec,Spec),
   #{name := <<"stream">>, stats := #{id := <<"61893ba6-07b3-431b-b2f7-716ac1643953">>}} = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema}),
+  ok.
+
+
+
+fetch_type(_) ->
+  #{allOf := _} = openapi_schema:type(test_openapi, stream_config),
   ok.

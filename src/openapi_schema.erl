@@ -1,7 +1,7 @@
 -module(openapi_schema).
 -include_lib("kernel/include/logger.hrl").
 
--export([load_schema/2]).
+-export([load_schema/2, type/2]).
 -export([process/2]).
 
 
@@ -20,12 +20,17 @@
 -define(AVAILABLE_EXPLAIN_KEYS, [required]).
 
 
+-spec load_schema(Schema :: map(), Name :: atom()) -> Schema :: map().
 load_schema(Schema, Name) ->
   #{components := #{schemas := Schemas}} = Schema,
   [persistent_term:put({openapi_handler_schema,Name,atom_to_binary(Type,latin1)}, prepare_type(TypeSchema)) ||
     {Type,TypeSchema} <- maps:to_list(Schemas)],
   persistent_term:put({openapi_handler_schema,Name},Schema),
   Schema.
+
+-spec type(SchemaName :: atom(), TypeName :: atom()) -> #{}.
+type(SchemaName, TypeName) ->
+  persistent_term:get({openapi_handler_schema, SchemaName, atom_to_binary(TypeName)}).
 
 
 process(Input, #{} = Opts) ->
@@ -232,6 +237,9 @@ encode3(#{oneOf := Choices}, Opts, Input, Path) ->
 encode3(#{type := <<"object">>, maxItems := MaxItems}, #{}, #{} = Input, Path) when map_size(Input) > MaxItems ->
   {error, #{error => too_many_items, detail => map_size(Input), path => Path}};
 
+encode3(#{type := <<"object">>, minItems := MinItems}, #{}, #{} = Input, Path) when map_size(Input) < MinItems ->
+  {error, #{error => too_few_items, detail => map_size(Input), path => Path}};
+
 encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Query} = Opts, #{} = Input, Path) ->
   Artificial = #{
     '$position' => #{type => <<"integer">>},
@@ -316,6 +324,8 @@ encode3(#{type := <<"object">>}, _Opts, Input, Path) ->
 
 encode3(#{type := <<"array">>, maxItems := MaxItems}, _Opts, Input, Path) when is_list(Input) andalso length(Input) > MaxItems ->
   {error, #{error => too_many_items, path => Path, detail => length(Input)}};
+encode3(#{type := <<"array">>, minItems := MinItems}, _Opts, Input, Path) when is_list(Input) andalso length(Input) < MinItems ->
+  {error, #{error => too_few_items, path => Path, detail => length(Input)}};
 
 encode3(#{type := <<"array">>, items := ItemSpec}, Opts, Input, Path) when is_list(Input) ->
   NullableItems = maps:get(nullable, ItemSpec, undefined) == true,
@@ -468,14 +478,14 @@ encode3(#{type := <<"boolean">>}, #{auto_convert := Convert}, Input, Path) ->
     false -> false;
     <<"true">> when Convert -> true;
     <<"false">> when Convert -> false;
-    _ -> {error, #{error => not_boolean, path => Path}}
+    _ -> {error, #{error => not_boolean, path => Path, input => Input}}
   end;
 
 encode3(#{type := <<"null">>}, #{}, Input, Path) ->
   case Input of
     null -> undefined;
     undefined -> undefined;
-    _ -> {error, #{error => not_null, path => Path}}
+    _ -> {error, #{error => not_null, path => Path, input => Input}}
   end;
 
 encode3(#{type := [_| _] = Types} = Schema, Opts, Input, Path) ->
