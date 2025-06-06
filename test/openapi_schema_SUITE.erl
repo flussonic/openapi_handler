@@ -20,7 +20,9 @@ groups() ->
       external_validators,
       min_max_length,
       max_items_array,
+      min_items_array,
       max_items_object,
+      min_items_object,
       required_keys,
       required_keys_filter,
       validate_scalar_as_object,
@@ -210,9 +212,19 @@ max_items_array(_) ->
     #{schema => #{type => <<"array">>, maxItems => 2, items => #{type => <<"integer">>}}}),
   ok.
 
+min_items_array(_) ->
+  {error, #{error := too_few_items}} = openapi_schema:process([1],
+    #{schema => #{type => <<"array">>, minItems => 2, items => #{type => <<"integer">>}}}),
+  ok.
+
 max_items_object(_) ->
   {error, #{error := too_many_items}} = openapi_schema:process(#{a => 1,b => 2, c => 3}, 
     #{schema => #{type => <<"object">>, maxItems => 2, additionalProperties => #{type => integer}}}),
+  ok.
+
+min_items_object(_) ->
+  {error, #{error := too_few_items}} = openapi_schema:process(#{a => 1},
+    #{schema => #{type => <<"object">>, minItems => 2, additionalProperties => #{type => integer}}}),
   ok.
 
 required_keys(_) ->

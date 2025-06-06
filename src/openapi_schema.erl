@@ -232,6 +232,9 @@ encode3(#{oneOf := Choices}, Opts, Input, Path) ->
 encode3(#{type := <<"object">>, maxItems := MaxItems}, #{}, #{} = Input, Path) when map_size(Input) > MaxItems ->
   {error, #{error => too_many_items, detail => map_size(Input), path => Path}};
 
+encode3(#{type := <<"object">>, minItems := MinItems}, #{}, #{} = Input, Path) when map_size(Input) < MinItems ->
+  {error, #{error => too_few_items, detail => map_size(Input), path => Path}};
+
 encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Query} = Opts, #{} = Input, Path) ->
   Artificial = #{
     '$position' => #{type => <<"integer">>},
@@ -316,6 +319,8 @@ encode3(#{type := <<"object">>}, _Opts, Input, Path) ->
 
 encode3(#{type := <<"array">>, maxItems := MaxItems}, _Opts, Input, Path) when is_list(Input) andalso length(Input) > MaxItems ->
   {error, #{error => too_many_items, path => Path, detail => length(Input)}};
+encode3(#{type := <<"array">>, minItems := MinItems}, _Opts, Input, Path) when is_list(Input) andalso length(Input) < MinItems ->
+  {error, #{error => too_few_items, path => Path, detail => length(Input)}};
 
 encode3(#{type := <<"array">>, items := ItemSpec}, Opts, Input, Path) when is_list(Input) ->
   NullableItems = maps:get(nullable, ItemSpec, undefined) == true,
