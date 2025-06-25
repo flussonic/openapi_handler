@@ -12,10 +12,11 @@ and converts request parameters to Erlang types.
 First, you need to compile cowboy routes for your schema.  
 ```erlang
   PetstoreRoutes = openapi_handler:routes(#{
-    schema => PetstorePath,         % path/to/your/schema.{json}
-    prefix => <<"/api/prefix">>,    % HTTP path prefix for your API
-    name => petstore_server_api,    % API identifier, must be unique
-    module => petstore_impl         % A module with functions to call
+    schema => PetstorePath,                     % path/to/your/schema.{json,yaml}
+    prefix => <<"/api/prefix">>,                % HTTP path prefix for your API
+    name => petstore_server_api,                % API identifier, must be unique
+    module => petstore_impl,                    % A module with functions to call
+    schema_opts => #{validators => #{}}         % (optional) schema processing options (see below)
   }),
 
   cowboy:start_clear(petstore_api_server, [{port, 8000}],
@@ -81,6 +82,16 @@ Also see validation quirks below.
 | enum   | atom   |
 | oneOf(const) | atom |
 | boolean | boolean|
+
+# Schema processing options
+You can customize the way objects are processed. 
+Available options:
+ * `#{extra_obj_key => drop}` -- the original object may contain keys not described by schema, just ignore them instead of raising an error
+ * `#{required_obj_keys => error}` -- raise an error when original object misses some required keys
+ * `#{validators => #{Format :: atom() => Validator}}`  
+   `Validator :: fun(Value) -> {ok, ConvertedValue} | {error, #{}}`  
+   If you use `format` in your schema, this option allows you to specify how these formats are processed.  
+   Return value may contain converted input (e.g. when you want to be flexible in accepted time formats).
 
 # Validation quirks
 ## `null` vs non-`nullable`

@@ -3,7 +3,8 @@
 
 all() ->
   [
-    {group, process}
+    {group, process},
+    {group, introspection}
   ].
 
 groups() ->
@@ -13,12 +14,16 @@ groups() ->
       extra_keys_error,
       extra_keys_drop,
       null_in_array,
+      nullable_by_oneof,
       discriminator,
       non_object_validate,
       regexp_pattern,
+      external_validators,
       min_max_length,
       max_items_array,
+      min_items_array,
       max_items_object,
+      min_items_object,
       required_keys,
       required_keys_filter,
       validate_scalar_as_object,
@@ -26,13 +31,18 @@ groups() ->
       check_explain_on_error,
       one_of_integer_const,
       filter_read_only_props
-  ]}
+    ]},
+    {introspection, [], [
+      fetch_type
+    ]}
   ].
 
 
 init_per_suite(Config) ->
   SchemaPath = code:lib_dir(openapi_handler) ++ "/test/flussonic-230127.json",
   openapi_handler:load_schema(SchemaPath, test_openapi),
+  BigOpenapiPath = code:lib_dir(openapi_handler) ++ "/test/redocly-big-openapi.json",
+  openapi_handler:load_schema(BigOpenapiPath, big_openapi),
   Config.
 
 end_per_suite(Config) ->
@@ -86,6 +96,22 @@ null_in_array(_) ->
   ok.
 
 
+nullable_by_oneof(_) ->
+  % OAS 3.1 supports all JSON types https://spec.openapis.org/oas/v3.1.0.html#data-types
+  % Also 'nullable' is invalid in OAS 3.1, and oneOf with {type: 'null'} is suggested instead
+  Props = #{nk => #{oneOf => [#{type => <<"string">>}, #{type => <<"null">>}]}, k2 => #{type => <<"integer">>, default => 42}},
+  Schema = #{type => <<"object">>, properties => Props},
+  % There was a bug where null value caused extra_keys error
+  Expect1 = #{nk => undefined},
+  Expect1 = openapi_schema:process(#{nk => null}, #{schema => Schema, extra_obj_key => error}),
+  Expect1s = #{nk => <<"hello">>},
+  Expect1s = openapi_schema:process(#{nk => <<"hello">>}, #{schema => Schema, extra_obj_key => error}),
+  {error, _} = openapi_schema:process(#{nk => 42}, #{schema => Schema, extra_obj_key => error}),
+  % Normalize the given object with a nulled key as much as possible
+  Expect2 = #{nk => undefined, k2 => 42},
+  Expect2 = openapi_schema:process(#{nk => null}, #{schema => Schema, extra_obj_key => error, apply_defaults => true}),
+  ok.
+
 discriminator(_) ->
   FooProp = #{dis => #{type => <<"string">>}, k1 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}},
   BarProp = #{dis => #{type => <<"string">>}, k2 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}},
@@ -132,9 +158,51 @@ regexp_pattern(_) ->
 
   {error, #{error := nomatch_pattern}} = openapi_schema:process(<<"123">>, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
   % {error, #{error := not_string}} = openapi_schema:process(abc, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
-  abc = openapi_schema:process(abc, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
+  <<"abc">> = openapi_schema:process(abc, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
   <<"abc">> =  openapi_schema:process(<<"abc">>, #{schema => #{type => <<"string">>, pattern => <<"^[a-z]+$">>}}),
-  abc =  openapi_schema:process(abc, #{schema => #{type => <<"string">>}}),
+  <<"abc">> =  openapi_schema:process(abc, #{schema => #{type => <<"string">>}}),
+
+  % pattern in loaded schema works well too (regexp is pre-compiled on load)
+  #{url := <<"http://foobar/">>} = openapi_schema:process(
+    #{name => <<"aaa">>, url => <<"http://foobar/">>}, #{name => test_openapi, type => event_sink_config}),
+  {error, #{error := nomatch_pattern}} = openapi_schema:process(
+    #{name => <<"aaa">>, url => <<"nonsense://foobar/">>}, #{name => test_openapi, type => event_sink_config}),
+
+  ok.
+
+
+no_space_validator(<<" ", _/binary>>) ->
+  {error, #{detail => leading_space}};
+no_space_validator(Input) ->
+  {ok, binary:replace(Input, <<" ">>, <<"_">>, [global])}.
+
+external_validators(_) ->
+  Schema = #{type => <<"string">>, format => no_space},
+  Validators = #{no_space => fun no_space_validator/1},
+  % Baseline
+  <<" ab cd">> = openapi_schema:process(<<" ab cd">>, #{schema => Schema}),
+  % auto_convert by default
+  <<"ab_cd">> = openapi_schema:process(<<"ab cd">>, #{schema => Schema, validators => Validators}),
+  % Disabled auto_convert -- error instead of converted value
+  {error, Err1} = openapi_schema:process(<<"ab cd">>, #{schema => Schema, validators => Validators, auto_convert => false}),
+  #{error := needs_convertation, format := no_space} = Err1,
+  % Proper value passes validation even witht auto_convert disabled
+  <<"ab_cd">> = openapi_schema:process(<<"ab_cd">>, #{schema => Schema, validators => Validators, auto_convert => false}),
+  % Improper value
+  {error, Err2} = openapi_schema:process(<<" ab cd">>, #{schema => Schema, validators => Validators}),
+  #{error := wrong_format, format := no_space, detail := leading_space} = Err2,
+
+  % format validators work with loaded schema
+  % big_openapi.digest is a composition of allOf and object, so it needs schema to be properly prepared
+  #{password := <<"ab_cd">>} = openapi_schema:process(
+    #{username => <<"Joe">>, password => <<"ab cd">>}, #{name => big_openapi, type => digest, validators => #{password => fun no_space_validator/1}}),
+
+  % format validator and pattern work simultaneously
+  Schema2 = #{type => <<"string">>, format => no_space, pattern => <<"^[a-z]+$">>},
+  {error, Err3} = openapi_schema:process(<<" ab cd">>, #{schema => Schema2, validators => Validators}),
+  #{error := wrong_format} = Err3,
+  {error, Err4} = openapi_schema:process(<<"12 cd">>, #{schema => Schema2, validators => Validators}),
+  #{error := nomatch_pattern} = Err4,
 
   ok.
 
@@ -152,9 +220,19 @@ max_items_array(_) ->
     #{schema => #{type => <<"array">>, maxItems => 2, items => #{type => <<"integer">>}}}),
   ok.
 
+min_items_array(_) ->
+  {error, #{error := too_few_items}} = openapi_schema:process([1],
+    #{schema => #{type => <<"array">>, minItems => 2, items => #{type => <<"integer">>}}}),
+  ok.
+
 max_items_object(_) ->
   {error, #{error := too_many_items}} = openapi_schema:process(#{a => 1,b => 2, c => 3}, 
     #{schema => #{type => <<"object">>, maxItems => 2, additionalProperties => #{type => integer}}}),
+  ok.
+
+min_items_object(_) ->
+  {error, #{error := too_few_items}} = openapi_schema:process(#{a => 1},
+    #{schema => #{type => <<"object">>, minItems => 2, additionalProperties => #{type => integer}}}),
   ok.
 
 required_keys(_) ->
@@ -229,4 +307,10 @@ filter_read_only_props(_) ->
   #{name := <<"stream">>} = Spec = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, access_type => write}),
   false = maps:is_key(spec,Spec),
   #{name := <<"stream">>, stats := #{id := <<"61893ba6-07b3-431b-b2f7-716ac1643953">>}} = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema}),
+  ok.
+
+
+
+fetch_type(_) ->
+  #{allOf := _} = openapi_schema:type(test_openapi, stream_config),
   ok.
