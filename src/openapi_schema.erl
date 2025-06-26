@@ -185,7 +185,7 @@ encode3(#{anyOf := Choices}, Opts, Input, Path) ->
 encode3(#{oneOf := _, discriminator := _} = Schema, #{query := true} = Opts, Input, Path) ->
   encode3(maps:without([discriminator], Schema), Opts, Input, Path);
 
-encode3(#{oneOf := Types, discriminator := #{propertyName := DKey, mapping := DMap}}, Opts, Input, Path) ->
+encode3(#{oneOf := Types, discriminator := #{propertyName := DKey, mapping := DMap}} = Schema, Opts, Input, Path) ->
   % If possible, get the discriminator value as atom (for lookup in mapping)
   ADKey = binary_to_atom(DKey),
   DefaultFun = fun(Input_) ->
@@ -209,6 +209,8 @@ encode3(#{oneOf := Types, discriminator := #{propertyName := DKey, mapping := DM
   end,
   DChoice = maps:get(ADvalue2, DMap, undefined),
   case {ADvalue2, DChoice} of
+    {undefined, _} when map_get(patch, Opts) == true ->
+      encode3(maps:without([discriminator], Schema), Opts, Input, Path);
     {undefined, _} ->
       {error, #{error => discriminator_missing, path => Path, propertyName => DKey}};
     {_, undefined} ->
