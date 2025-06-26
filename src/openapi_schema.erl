@@ -1,6 +1,7 @@
 -module(openapi_schema).
 -include_lib("kernel/include/logger.hrl").
 
+-export([load_schema/2, type/2]).
 -export([process/2]).
 
 
@@ -19,6 +20,19 @@
 -define(AVAILABLE_EXPLAIN_KEYS, [required]).
 
 
+-spec load_schema(Schema :: map(), Name :: atom()) -> Schema :: map().
+load_schema(Schema, Name) ->
+  #{components := #{schemas := Schemas}} = Schema,
+  [persistent_term:put({openapi_handler_schema,Name,atom_to_binary(Type,latin1)}, prepare_type(TypeSchema)) ||
+    {Type,TypeSchema} <- maps:to_list(Schemas)],
+  persistent_term:put({openapi_handler_schema,Name},Schema),
+  Schema.
+
+-spec type(SchemaName :: atom(), TypeName :: atom()) -> #{}.
+type(SchemaName, TypeName) ->
+  persistent_term:get({openapi_handler_schema, SchemaName, atom_to_binary(TypeName)}).
+
+
 process(Input, #{} = Opts) ->
   maps:map(fun
     (schema,_) -> ok;
@@ -27,6 +41,7 @@ process(Input, #{} = Opts) ->
     (name,_) -> ok;
     (array_convert,Flag) when Flag == true; Flag == false -> ok;
     (auto_convert,Flag) when Flag == true; Flag == false -> ok;
+    (validators,#{} = V) -> V;
     (query,Flag) when Flag == true; Flag == false -> ok;
     (apply_defaults,Flag) when Flag == true; Flag == false -> ok;
     (patch,Flag) when Flag == true; Flag == false -> ok;
@@ -54,12 +69,53 @@ process(Input, #{} = Opts) ->
     required_obj_keys => drop,
     access_type => read
   },
-  case encode3(Schema, maps:merge(DefaultOpts,Opts), Input, []) of
+  Validators = maps:merge(default_validators(), maps:get(validators, Opts, #{})),
+  FinalOpts = (maps:merge(DefaultOpts,Opts))#{validators => Validators},
+  case encode3(Schema, FinalOpts, Input, []) of
     {error, Error} ->
       {error, Error};
     R ->
       R
   end.
+
+
+
+prepare_type(#{allOf := Types} = Type0) ->
+  Type0#{allOf := [prepare_type(T) || T <- Types]};
+prepare_type(#{anyOf := Types} = Type0) ->
+  Type0#{anyOf := [prepare_type(T) || T <- Types]};
+prepare_type(#{oneOf := Types} = Type0) ->
+  Type0#{oneOf := [prepare_type(T) || T <- Types]};
+prepare_type(#{type := <<"object">>, properties := Props} = Type0) ->
+  Type0#{properties => maps:map(fun(_, T) -> prepare_type(T) end, Props)};
+prepare_type(#{} = Type0) ->
+  % Convert format name to atom. This matches validators syntax
+  Type1 = case Type0 of
+    #{format := BinFormat} when is_binary(BinFormat) ->
+      Type0#{format := binary_to_atom(BinFormat)};
+    #{} ->
+      Type0
+  end,
+  % precompile patterns
+  Type2 = case Type1 of
+    #{pattern := Pattern} ->
+      {ok, MP} = re:compile(Pattern, []),
+      Type1#{pattern := MP};
+    #{} ->
+      Type1
+  end,
+  Type2.
+
+
+% FIXME: Decide whether default formats should be supported by this library.
+% - JSON Schema Validation formats (https://datatracker.ietf.org/doc/html/draft-bhutton-json-schema-validation-00#section-7.3)
+% - OAS (https://spec.openapis.org/oas/v3.1.0.html#data-types)
+% JSON schema defines many non-trivial formats (e.g. RFC 3339 date-time, idn-email, iri-reference, etc.),
+% and supporting all of them properly may require lots of maintenance work.
+% Formats added by OAS are quite simple though.
+default_validators() ->
+  #{}.
+
 
 encode3(_, #{query := true}, not_null, _) ->
   not_null;
@@ -125,6 +181,10 @@ encode3(#{anyOf := Choices}, Opts, Input, Path) ->
   Encoded = F(Choices, #{error => unmatched_anyOf, path => Path}),
   check_extra_keys(Input, Encoded, Opts);
 
+% Skip discriminator resolving during of query check
+encode3(#{oneOf := _, discriminator := _} = Schema, #{query := true} = Opts, Input, Path) ->
+  encode3(maps:without([discriminator], Schema), Opts, Input, Path);
+
 encode3(#{oneOf := Types, discriminator := #{propertyName := DKey, mapping := DMap}}, Opts, Input, Path) ->
   % If possible, get the discriminator value as atom (for lookup in mapping)
   ADKey = binary_to_atom(DKey),
@@ -181,6 +241,9 @@ encode3(#{oneOf := Choices}, Opts, Input, Path) ->
 encode3(#{type := <<"object">>, maxItems := MaxItems}, #{}, #{} = Input, Path) when map_size(Input) > MaxItems ->
   {error, #{error => too_many_items, detail => map_size(Input), path => Path}};
 
+encode3(#{type := <<"object">>, minItems := MinItems}, #{}, #{} = Input, Path) when map_size(Input) < MinItems ->
+  {error, #{error => too_few_items, detail => map_size(Input), path => Path}};
+
 encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Query} = Opts, #{} = Input, Path) ->
   Artificial = #{
     '$position' => #{type => <<"integer">>},
@@ -206,9 +269,7 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
         #{FieldBin := Value_} ->
           {ok, Value_};
         #{} ->
-          undefined;
-        _ ->
-          error(#{input => Input, field => Field, prop => Prop, obj => Obj, path => Path})
+          undefined
       end,
       ApplyDefaults = maps:get(apply_defaults, Opts, false),
       Default = case Prop of
@@ -216,7 +277,14 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
         _ -> #{}
       end,
 
-      NullableProp = maps:get(nullable, Prop, undefined) == true,
+      NullableProp = case Prop of
+        #{nullable := true} ->
+          true;
+        #{oneOf := OneOf} ->
+          lists:any(fun(#{type := <<"null">>}) -> true; (_) -> false end, OneOf);
+        #{} ->
+          false
+      end,
       Patching = maps:get(patch, Opts, undefined) == true,
       UpdatedObj = case ExtractedValue of
         {ok, NullFlag} when Query andalso (NullFlag == null orelse NullFlag == not_null) ->
@@ -230,7 +298,7 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
         {ok, _Value} when IsWriteAccess andalso IsReadOnly andalso (not IsRequired) ->
           Obj;
         {ok, Value} ->
-          case encode3(Prop, Opts, Value, Path ++ [Field]) of
+          case encode3(Prop#{nullable => NullableProp}, Opts, Value, Path ++ [Field]) of
             {error, _} = E ->
               E;
             Value1 when Query andalso (is_number(Value1) orelse is_atom(Value1) orelse is_binary(Value1)) ->
@@ -258,6 +326,8 @@ encode3(#{type := <<"object">>}, _Opts, Input, Path) ->
 
 encode3(#{type := <<"array">>, maxItems := MaxItems}, _Opts, Input, Path) when is_list(Input) andalso length(Input) > MaxItems ->
   {error, #{error => too_many_items, path => Path, detail => length(Input)}};
+encode3(#{type := <<"array">>, minItems := MinItems}, _Opts, Input, Path) when is_list(Input) andalso length(Input) < MinItems ->
+  {error, #{error => too_few_items, path => Path, detail => length(Input)}};
 
 encode3(#{type := <<"array">>, items := ItemSpec}, Opts, Input, Path) when is_list(Input) ->
   NullableItems = maps:get(nullable, ItemSpec, undefined) == true,
@@ -371,9 +441,10 @@ encode3(#{enum := Choices, type := <<"string">>}, #{auto_convert := Convert}, In
     false -> {error, #{unknown_enum_option => Input, path => Path, available => Choices}}
   end;
 
-encode3(#{type := <<"string">>} = Spec, _, Input, Path) ->
+encode3(#{type := <<"string">>} = Spec, #{auto_convert := Convert} = Options, Input, Path) ->
   {Input1, InputForValidation} = case Input of
     _ when is_binary(Input) -> {Input, Input};
+    _ when is_atom(Input) andalso Convert -> {atom_to_binary(Input), atom_to_binary(Input)};
     _ when is_atom(Input) -> {Input, atom_to_binary(Input)};
     _ -> {{error, #{error => not_string, path => Path, input => Input}}, undefined}
   end,
@@ -386,17 +457,22 @@ encode3(#{type := <<"string">>} = Spec, _, Input, Path) ->
           {error, #{error => too_short, path => Path, input => Input, min_length => MinLength}};
         #{maxLength := MaxLength} when size(InputForValidation) > MaxLength ->
           {error, #{error => too_long, path => Path, input => Input, max_length => MaxLength}};
-        #{pattern := RegExp} ->
-          case re:run(InputForValidation, RegExp) of
-            {match, _} ->
-              Input1;
-            nomatch ->
-              {error, #{error => nomatch_pattern, path => Path, input => Input1, pattern => RegExp}}
-          end;
         #{} ->
-          Input1
+          Format = maps:get(format, Spec, undefined),
+          Validators = maps:get(validators, Options),
+          FormatChecked = validate_string_format(InputForValidation, Format, maps:get(Format, Validators, undefined), Convert),
+          PatternChecked = validate_string_pattern(FormatChecked, maps:get(pattern, Spec, undefined)),
+          case PatternChecked of
+            {error, Error} ->
+              {error, Error#{path => Path, input => Input1}};
+            <<_/binary>> when Convert ->
+              PatternChecked;
+            <<_/binary>> ->
+              Input1
+          end
       end
   end;
+
 
 encode3(#{type := <<"boolean">>}, #{auto_convert := Convert}, Input, Path) ->
   case Input of
@@ -404,7 +480,14 @@ encode3(#{type := <<"boolean">>}, #{auto_convert := Convert}, Input, Path) ->
     false -> false;
     <<"true">> when Convert -> true;
     <<"false">> when Convert -> false;
-    _ -> {error, #{error => not_boolean, path => Path}}
+    _ -> {error, #{error => not_boolean, path => Path, input => Input}}
+  end;
+
+encode3(#{type := <<"null">>}, #{}, Input, Path) ->
+  case Input of
+    null -> undefined;
+    undefined -> undefined;
+    _ -> {error, #{error => not_null, path => Path, input => Input}}
   end;
 
 encode3(#{type := [_| _] = Types} = Schema, Opts, Input, Path) ->
@@ -427,6 +510,33 @@ encode_number(#{maximum := Max}, Input, Path) when Input > Max ->
 
 encode_number(_Schema, Input, _Path) ->
   Input.
+
+
+validate_string_format(Input, _, undefined, _) ->
+  Input;
+validate_string_format(Input, Format, Validator, Convert) ->
+  case Validator(Input) of
+    {ok, Converted} when (not Convert) andalso Converted /= Input ->
+      % The value is mostly ok, but needs to be converted
+      {error, #{error => needs_convertation, format => Format}};
+    {ok, Input2} ->
+      Input2;
+    {error, FmtError} ->
+      Err0 = #{error => wrong_format, format => Format},
+      {error, maps:merge(Err0, FmtError)}
+  end.
+
+validate_string_pattern({error, _} = Error, _) ->
+  Error;
+validate_string_pattern(Input, undefined) ->
+  Input;
+validate_string_pattern(Input, RegExp) ->
+  case re:run(Input, RegExp) of
+    {match, _} ->
+      Input;
+    nomatch ->
+      {error, #{error => nomatch_pattern, pattern => RegExp}}
+  end.
 
 
 check_required_keys(#{} = Encoded, #{} = Schema, #{required_obj_keys := error} = Opts) ->

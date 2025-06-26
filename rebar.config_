@@ -1,0 +1,16 @@
+% No deps by default to prevent conflicts
+{deps, [
+]}.
+
+{profiles, [
+  {dev, [
+    {deps, [
+      jsx,
+      yamerl,
+      {cowboy, "2.12.0"},
+      {lhttpc, {git, "https://github.com/erlyvideo/lhttpc.git", {branch, "master"}}},
+      redbug
+    ]},
+    {ct_opts, [{ct_hooks, [cth_surefire]}]}
+  ]}
+]}.
