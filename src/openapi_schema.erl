@@ -182,10 +182,18 @@ encode3(#{anyOf := Choices}, Opts, Input, Path) ->
   check_extra_keys(Input, Encoded, Opts);
 
 % Skip discriminator resolving during of query check
-encode3(#{oneOf := _, discriminator := _} = Schema, #{query := true} = Opts, Input, Path) ->
+encode3(#{discriminator := _} = Schema, #{query := true} = Opts, Input, Path) ->
   encode3(maps:without([discriminator], Schema), Opts, Input, Path);
 
-encode3(#{oneOf := Types, discriminator := #{propertyName := DKey, mapping := DMap}} = Schema, Opts, Input, Path) ->
+encode3(#{discriminator := #{propertyName := DKey, mapping := DMap}} = Schema, Opts0, Input, Path)
+  when not is_map_key({skip_discriminator, DKey}, Opts0)
+->
+  Types = case Schema of
+    #{oneOf := OneOfTypes} -> OneOfTypes;
+    #{} -> [#{'$ref' => T} || T <- maps:values(DMap)]
+  end,
+  Opts = Opts0#{{skip_discriminator, DKey} => already_handled},
+
   % If possible, get the discriminator value as atom (for lookup in mapping)
   ADKey = binary_to_atom(DKey),
   DefaultFun = fun(Input_) ->
@@ -216,7 +224,19 @@ encode3(#{oneOf := Types, discriminator := #{propertyName := DKey, mapping := DM
     {_, undefined} ->
       {error, #{error => discriminator_unmapped, path => Path, propertyName => DKey, value => ADvalue2}};
     {_, _} ->
-      encode3(#{'$ref' => DChoice}, Opts, Input, Path)
+      Result0 = encode3(#{'$ref' => DChoice}, Opts, Input, Path),
+      case is_map(Result0) andalso maps:values(maps:with([DKey, ADKey], Result0)) of
+        false ->
+          % Error
+          Result0;
+        [<<_/binary>>] ->
+          % discriminator value not described as const, but has type: string
+          (maps:without([DKey, ADKey], Result0))#{ADKey => ADvalue2};
+        [ADvalue2] ->
+          Result0;
+        [] ->
+          Result0
+      end
   end;
 
 encode3(#{oneOf := Choices}, Opts, Input, Path) ->
