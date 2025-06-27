@@ -30,6 +30,7 @@ groups() ->
       check_explain,
       check_explain_on_error,
       one_of_integer_const,
+      one_of_const_default,
       filter_read_only_props
     ]},
     {introspection, [], [
@@ -299,6 +300,15 @@ one_of_integer_const(_) ->
     name := <<"one_of_integer_const">>,
     inputs := [#{apts := 1}, #{apts := 3}, #{apts := video}]
   } = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true, explain => [required]}),
+  ok.
+
+one_of_const_default(_) ->
+  % When type is oneof(const), default should be returned as atom
+  FooProp = #{k1 => #{oneOf => [#{const => <<"hello">>}, #{const => <<"world">>}], default => <<"world">>}},
+  FooType = #{type => <<"object">>, properties => FooProp},
+  #{k1 := world} = openapi_schema:process(
+        #{},
+        #{schema => FooType, apply_defaults => true}),
   ok.
 
 filter_read_only_props(_) ->

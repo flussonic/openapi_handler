@@ -265,18 +265,16 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
       IsRequired = (lists:member(FieldBin, RequiredKeys) orelse IsPrimary),
       IsWriteAccess = maps:get(access_type, Opts, read) == write,
 
-      ExtractedValue = case Input of
-        #{Field := Value_} ->
-          {ok, Value_};
-        #{FieldBin := Value_} ->
-          {ok, Value_};
-        #{} ->
-          undefined
-      end,
       ApplyDefaults = maps:get(apply_defaults, Opts, false),
-      Default = case Prop of
-        #{default := DefaultValue} when ApplyDefaults -> #{Field => DefaultValue};
-        _ -> #{}
+      EffectiveValue = case {Input, Prop} of
+        {#{Field := Value_}, #{}} ->
+          {ok, Value_};
+        {#{FieldBin := Value_}, #{}} ->
+          {ok, Value_};
+        {#{}, #{default := DefaultValue}} when ApplyDefaults ->
+          {ok, DefaultValue};
+        {#{}, #{}} ->
+          undefined
       end,
 
       NullableProp = case Prop of
@@ -288,7 +286,7 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
           false
       end,
       Patching = maps:get(patch, Opts, undefined) == true,
-      UpdatedObj = case ExtractedValue of
+      UpdatedObj = case EffectiveValue of
         {ok, NullFlag} when Query andalso (NullFlag == null orelse NullFlag == not_null) ->
           Obj#{Field => NullFlag};
 
@@ -309,7 +307,7 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
               Obj#{Field => Value1}
           end;
         undefined ->
-          maps:merge(Default,Obj)
+          Obj
       end,
       UpdatedObj
   end, #{}, maps:merge(Artificial,Properties)),
