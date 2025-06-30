@@ -182,10 +182,18 @@ encode3(#{anyOf := Choices}, Opts, Input, Path) ->
   check_extra_keys(Input, Encoded, Opts);
 
 % Skip discriminator resolving during of query check
-encode3(#{oneOf := _, discriminator := _} = Schema, #{query := true} = Opts, Input, Path) ->
+encode3(#{discriminator := _} = Schema, #{query := true} = Opts, Input, Path) ->
   encode3(maps:without([discriminator], Schema), Opts, Input, Path);
 
-encode3(#{oneOf := Types, discriminator := #{propertyName := DKey, mapping := DMap}} = Schema, Opts, Input, Path) ->
+encode3(#{discriminator := #{propertyName := DKey, mapping := DMap}} = Schema, Opts0, Input, Path)
+  when not is_map_key({skip_discriminator, DKey}, Opts0)
+->
+  Types = case Schema of
+    #{oneOf := OneOfTypes} -> OneOfTypes;
+    #{} -> [#{'$ref' => T} || T <- maps:values(DMap)]
+  end,
+  Opts = Opts0#{{skip_discriminator, DKey} => already_handled},
+
   % If possible, get the discriminator value as atom (for lookup in mapping)
   ADKey = binary_to_atom(DKey),
   DefaultFun = fun(Input_) ->
@@ -202,7 +210,7 @@ encode3(#{oneOf := Types, discriminator := #{propertyName := DKey, mapping := DM
   ADvalue1 = DefaultFun(Input),
   ADvalue2 = case ADvalue1 of
     undefined ->
-      Try = encode3(hd(Types), Opts#{apply_defaults => true}, Input, Path),
+      Try = encode3(hd(Types), Opts#{apply_defaults => true, required_obj_keys => drop}, Input, Path),
       DefaultFun(Try);
     _ ->
       ADvalue1
@@ -216,7 +224,19 @@ encode3(#{oneOf := Types, discriminator := #{propertyName := DKey, mapping := DM
     {_, undefined} ->
       {error, #{error => discriminator_unmapped, path => Path, propertyName => DKey, value => ADvalue2}};
     {_, _} ->
-      encode3(#{'$ref' => DChoice}, Opts, Input, Path)
+      Result0 = encode3(#{'$ref' => DChoice}, Opts, Input, Path),
+      case is_map(Result0) andalso maps:values(maps:with([DKey, ADKey], Result0)) of
+        false ->
+          % Error
+          Result0;
+        [<<_/binary>>] ->
+          % discriminator value not described as const, but has type: string
+          (maps:without([DKey, ADKey], Result0))#{ADKey => ADvalue2};
+        [ADvalue2] ->
+          Result0;
+        [] ->
+          Result0
+      end
   end;
 
 encode3(#{oneOf := Choices}, Opts, Input, Path) ->
@@ -265,18 +285,16 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
       IsRequired = (lists:member(FieldBin, RequiredKeys) orelse IsPrimary),
       IsWriteAccess = maps:get(access_type, Opts, read) == write,
 
-      ExtractedValue = case Input of
-        #{Field := Value_} ->
-          {ok, Value_};
-        #{FieldBin := Value_} ->
-          {ok, Value_};
-        #{} ->
-          undefined
-      end,
       ApplyDefaults = maps:get(apply_defaults, Opts, false),
-      Default = case Prop of
-        #{default := DefaultValue} when ApplyDefaults -> #{Field => DefaultValue};
-        _ -> #{}
+      EffectiveValue = case {Input, Prop} of
+        {#{Field := Value_}, #{}} ->
+          {ok, Value_};
+        {#{FieldBin := Value_}, #{}} ->
+          {ok, Value_};
+        {#{}, #{default := DefaultValue}} when ApplyDefaults ->
+          {ok, DefaultValue};
+        {#{}, #{}} ->
+          undefined
       end,
 
       NullableProp = case Prop of
@@ -288,7 +306,7 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
           false
       end,
       Patching = maps:get(patch, Opts, undefined) == true,
-      UpdatedObj = case ExtractedValue of
+      UpdatedObj = case EffectiveValue of
         {ok, NullFlag} when Query andalso (NullFlag == null orelse NullFlag == not_null) ->
           Obj#{Field => NullFlag};
 
@@ -309,7 +327,7 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
               Obj#{Field => Value1}
           end;
         undefined ->
-          maps:merge(Default,Obj)
+          Obj
       end,
       UpdatedObj
   end, #{}, maps:merge(Artificial,Properties)),

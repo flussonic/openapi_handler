@@ -28,7 +28,7 @@ updateUser(#{username := <<"Mary">>, json_body := Body}) ->
 
 % A parameter in a query string
 findPetsByStatus(#{status := [pending,sold]}) -> 
-  {json, 200, [#{name => <<"Dingo">>, photoUrls => 1}]}.
+  {json, 200, [#{petType => dog, name => <<"Dingo">>, photoUrls => 1}]}.
 
 % Object in a JSON body
 placeOrder(#{json_body := #{petId := 7214, status := placed} = Order}) ->
