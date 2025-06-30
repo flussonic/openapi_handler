@@ -210,7 +210,7 @@ encode3(#{discriminator := #{propertyName := DKey, mapping := DMap}} = Schema, O
   ADvalue1 = DefaultFun(Input),
   ADvalue2 = case ADvalue1 of
     undefined ->
-      Try = encode3(hd(Types), Opts#{apply_defaults => true}, Input, Path),
+      Try = encode3(hd(Types), Opts#{apply_defaults => true, required_obj_keys => drop}, Input, Path),
       DefaultFun(Try);
     _ ->
       ADvalue1
