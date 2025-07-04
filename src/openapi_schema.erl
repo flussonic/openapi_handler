@@ -17,7 +17,7 @@
   is_map_key(const,Schema)
 )).
 
--define(AVAILABLE_EXPLAIN_KEYS, [required]).
+-define(AVAILABLE_EXPLAIN_KEYS, [required, effective_schema]).
 
 
 -spec load_schema(Schema :: map(), Name :: atom()) -> Schema :: map().
@@ -153,11 +153,12 @@ encode3(#{allOf := Choices}, Opts, Input, Path) ->
     ({N,Choice}, Obj) ->
       case encode3(Choice, Opts, Input, Path ++ [N]) of
         {error, #{extra_keys := _Extrakeys, encoded := Obj1}} ->
-          merge_objects(Opts, Choice, [Obj, Obj1]);  % keep processing, all choices have to be processed for allOf
+          merge_objects(Opts, #{}, [Obj, Obj1]);  % keep processing, all choices have to be processed for allOf
         {error, E} ->
           {error, E};
         #{} = Obj1 ->
-          merge_objects(Opts, Choice, [Obj, Obj1])
+          % explain in Obj1 is already defined by encode3, so pass a bogus schema
+          merge_objects(Opts, #{}, [Obj, Obj1])
       end
   end, #{}, lists:zip(lists:seq(0,length(Choices)-1),Choices)),
   check_extra_keys(Input, Encoded, Opts);
@@ -609,6 +610,10 @@ merge_objects(Opts, Schema, Objs) ->
         (Obj, Acc) -> lists:merge(maps:get(required, maps:get('$explain', Obj, #{}), []), Acc)
       end, get_required_keys(Schema, Opts), Objs),
       #{'$explain' => #{required => RequiredKeys}};
+    #{explain := [effective_schema]} ->
+      PrevEffSchemas = [ES || #{'$explain' := #{effective_schema := ES}} <- Objs],
+      EffectiveSchema = lists:foldl(fun merge_schemas/2, Schema, PrevEffSchemas),
+      #{'$explain' => #{effective_schema => EffectiveSchema}};
     _ -> #{}
   end,
   lists:foldl(fun
@@ -616,6 +621,25 @@ merge_objects(Opts, Schema, Objs) ->
     ({error, E}, _) -> {error, E};
     (_, {error, E}) -> {error, E}
   end, ExplainMap, Objs).
+
+% Merge schemas for e.g. allOf for introspection.
+% Lists are concatenated
+% Maps are deep-merged
+% When given two scalar values, second one has priority
+%
+% So, attributes with list values (like required) are collected across variants
+merge_schemas(S1, S2) when is_map(S1), is_map(S2) ->
+  S2m = maps:map(fun(K, V) -> merge_schemas(maps:get(K, S1, undefined), V) end, S2),
+  maps:merge(S1, S2m);
+merge_schemas(L1, L2) when is_list(L1), is_list(L2) ->
+  L1 ++ L2;
+merge_schemas(_, S2) when is_map(S2) ->
+  S2;
+merge_schemas(S1, _) when is_map(S1) ->
+  S1;
+merge_schemas(_, V) ->
+  V.
+
 
 check_explain_keys(Keys) when is_list(Keys) ->
   [error({unknown_option,explain,Key}) || Key <- Keys, lists:member(Key, ?AVAILABLE_EXPLAIN_KEYS) =/= true],
