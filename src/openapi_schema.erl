@@ -555,6 +555,8 @@ validate_string_pattern(Input, RegExp) ->
   case re:run(Input, RegExp) of
     {match, _} ->
       Input;
+    nomatch when element(1, RegExp) == re_pattern ->
+      {error, #{error => nomatch_pattern}};
     nomatch ->
       {error, #{error => nomatch_pattern, pattern => RegExp}}
   end.
