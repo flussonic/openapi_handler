@@ -16,6 +16,8 @@ groups() ->
       null_in_array,
       nullable_by_oneof,
       discriminator,
+      discriminator_default_missing_fields,
+      recursive_discriminator,
       non_object_validate,
       regexp_pattern,
       external_validators,
@@ -30,10 +32,12 @@ groups() ->
       check_explain,
       check_explain_on_error,
       one_of_integer_const,
+      one_of_const_default,
       filter_read_only_props
     ]},
     {introspection, [], [
-      fetch_type
+      fetch_type,
+      discriminator_effective_schema
     ]}
   ].
 
@@ -150,6 +154,81 @@ discriminator(_) ->
   Foo5 = openapi_schema:process(#{k1 => 12, k2 => 34, k4 => 56}, #{type => discr_t, whole_schema => DSchema1}),
   [k1, k4] = lists:sort(maps:keys(Foo5)), % apply default
 
+  ok.
+
+% See example without oneOf at https://spec.openapis.org/oas/v3.1.0.html#discriminator-object
+% The same happens in redocly-petstore.yaml:
+%   Pet:
+%     petType: {type: string}
+%     discriminator: {propertyName: petType, mapping: {...}}
+%   Cat:
+%     allOf: [Pet, {type: object, ...}]
+%
+% > To avoid redundancy, the discriminator MAY be added to a parent schema definition,
+%   and all schemas comprising the parent schema in an allOf construct may be used as an alternate schema.
+% So, discriminator is handled at top-level component, and later must be ignored
+%
+% Also the same example shows how oneOf can be omitted.
+% openapi_schema has a stricter behaviour, not supporting implicit mapping
+recursive_discriminator(_) ->
+  % risk of unterminated recursion, thus timetrap
+  ct:timetrap(500),
+
+  FooProp = #{k1 => #{type => <<"integer">>, default => 101}},
+  BarProp = #{k2 => #{type => <<"integer">>, default => 22}},
+  FooOwn = #{type => <<"object">>, properties => FooProp},
+  BarOwn = #{type => <<"object">>, properties => BarProp},
+  FooType = #{allOf => [#{'$ref' => <<"#/components/schemas/discr_t">>}, FooOwn]},
+  BarType = #{allOf => [#{'$ref' => <<"#/components/schemas/discr_t">>}, BarOwn]},
+  Mapping = #{foo => <<"#/components/schemas/foo_t">>, bar => <<"#/components/schemas/bar_t">>},
+
+  DSchemaForDis = fun(DisSchema) ->
+    BaseProp = #{k3 => #{type => <<"integer">>}, dis => DisSchema},
+    DType = #{type => <<"object">>, properties => BaseProp, discriminator => #{propertyName => <<"dis">>, mapping => Mapping}},
+    #{components => #{schemas => #{discr_t => DType, foo_t => FooType, bar_t => BarType}}}
+  end,
+
+  % Easy case: discriminator is defined as oneOf(const) and passed explicitly
+  DSchema1 = DSchemaForDis(#{oneOf => [#{const => <<"foo">>}, #{const => <<"bar">>}]}),
+  #{dis := foo, k1 := 101} = openapi_schema:process(#{dis => <<"foo">>}, #{type => discr_t, whole_schema => DSchema1, apply_defaults => true}),
+  #{dis := bar, k2 := 22} = openapi_schema:process(#{dis => <<"bar">>}, #{type => discr_t, whole_schema => DSchema1, apply_defaults => true}),
+
+  % Harder case: discriminator is just type: string
+  DSchema2 = DSchemaForDis(#{type => <<"string">>}),
+  #{dis := foo, k1 := 101} = openapi_schema:process(#{dis => <<"foo">>}, #{type => discr_t, whole_schema => DSchema2, apply_defaults => true}),
+  #{dis := bar, k2 := 22} = openapi_schema:process(#{dis => <<"bar">>}, #{type => discr_t, whole_schema => DSchema2, apply_defaults => true}),
+
+  % Hard case: discriminator has default value
+  DSchema3a = DSchemaForDis(#{type => <<"string">>, default => <<"foo">>}),
+  #{dis := foo, k1 := 101} = openapi_schema:process(#{}, #{type => discr_t, whole_schema => DSchema3a, apply_defaults => true}),
+  DSchema3b = DSchemaForDis(#{type => <<"string">>, default => <<"bar">>}),
+  #{dis := bar, k2 := 22} = openapi_schema:process(#{}, #{type => discr_t, whole_schema => DSchema3b, apply_defaults => true}),
+
+  [] = maps:keys(openapi_schema:process(#{}, #{type => discr_t, whole_schema => DSchema3b})),
+  [k2, k3] = maps:keys(openapi_schema:process(#{k2 => 11, k3 => 435}, #{type => discr_t, whole_schema => DSchema3b})),
+  % k1 from foo_t is handled like dis=bar
+  [] = maps:keys(openapi_schema:process(#{k1 => 43}, #{type => discr_t, whole_schema => DSchema3b})),
+  {error, #{extra_keys := [k1]}} = openapi_schema:process(#{k1 => 43}, #{type => discr_t, whole_schema => DSchema3b, extra_obj_key => error}),
+
+  ok.
+
+discriminator_default_missing_fields(_) ->
+  FooProp = #{dis => #{type => <<"string">>}, k1 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}},
+  BarProp = #{dis => #{type => <<"string">>}, k2 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}},
+  FooOwn = #{type => <<"object">>, properties => FooProp, required => [<<"k3">>]},
+  BarOwn = #{type => <<"object">>, properties => BarProp, required => [<<"k2">>, <<"k3">>]},
+  FooType = #{allOf => [#{'$ref' => <<"#/components/schemas/discr_t">>}, FooOwn]},
+  BarType = #{allOf => [#{'$ref' => <<"#/components/schemas/discr_t">>}, BarOwn]},
+  Mapping = #{foo => <<"#/components/schemas/foo_t">>, bar => <<"#/components/schemas/bar_t">>},
+  DSchemaForDis = fun(DisSchema) ->
+    BaseProp = #{dis => DisSchema},
+    DType = #{type => <<"object">>, properties => BaseProp, discriminator => #{propertyName => <<"dis">>, mapping => Mapping}},
+    #{components => #{schemas => #{discr_t => DType, foo_t => FooType, bar_t => BarType}}}
+  end,
+  DSchema_foo = DSchemaForDis(#{type => <<"string">>, default => <<"foo">>}),
+  {error, #{missing_required := [<<"k3">>]}} = openapi_schema:process(#{}, #{type => discr_t, whole_schema => DSchema_foo, required_obj_keys => error}),
+  DSchema_bar = DSchemaForDis(#{type => <<"string">>, default => <<"bar">>}),
+  {error, #{missing_required := [<<"k2">>]}} = openapi_schema:process(#{k3 => 1}, #{type => discr_t, whole_schema => DSchema_bar, required_obj_keys => error}),
   ok.
 
 
@@ -282,6 +361,11 @@ check_explain(_) ->
       #{'$explain' := #{required := [<<"url">>]}},
       #{'$explain' := #{required := [<<"url">>]}}],
     '$explain' := #{required := [<<"name">>]}} = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true, explain => [required]}),
+  % The same knowledge may be obtained by effective_schema explain as well
+  #{inputs := [#{'$explain' := #{effective_schema := EffISchema}}|_], '$explain' := #{effective_schema := EffSchema}} =
+    openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true, explain => [effective_schema]}),
+  #{required := [<<"url">>]} = maps:with([required], EffISchema),
+  #{required := [<<"name">>]} = maps:with([required], EffSchema),
   ok.
 
 check_explain_on_error(_) ->
@@ -301,6 +385,15 @@ one_of_integer_const(_) ->
   } = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true, explain => [required]}),
   ok.
 
+one_of_const_default(_) ->
+  % When type is oneof(const), default should be returned as atom
+  FooProp = #{k1 => #{oneOf => [#{const => <<"hello">>}, #{const => <<"world">>}], default => <<"world">>}},
+  FooType = #{type => <<"object">>, properties => FooProp},
+  #{k1 := world} = openapi_schema:process(
+        #{},
+        #{schema => FooType, apply_defaults => true}),
+  ok.
+
 filter_read_only_props(_) ->
   Schema = persistent_term:get({openapi_handler_schema,test_openapi}),
   Json = #{
@@ -316,4 +409,49 @@ filter_read_only_props(_) ->
 
 fetch_type(_) ->
   #{allOf := _} = openapi_schema:type(test_openapi, stream_config),
+  ok.
+
+
+% The case being checked here:
+%  * business logic relies on extended attributes in schema
+%  * type of processed object contains allOf or discriminator
+%  * openapi_schema:type is not enough because it does not expand allOf and cannot choose discriminated type without actual data
+%  * `explain => [effective_schema]` option makes openapi_schema:process return the resulting schema for processed object
+% This way the calling code can access object or property attributes to perform extra actions
+discriminator_effective_schema(_) ->
+  % risk of unterminated recursion, thus timetrap
+  ct:timetrap(500),
+
+  FooProp = #{k1 => #{type => <<"integer">>, default => 101, 'x-attr1' => <<"val1">>}},
+  BarProp = #{k2 => #{type => <<"integer">>, default => 22,  'x-attr2' => true}},
+  FooOwn = #{type => <<"object">>, properties => FooProp, 'x-objAttr1' => [<<"k1">>]},
+  BarOwn = #{type => <<"object">>, properties => BarProp, 'x-objAttr2' => [2]},
+  FooType = #{allOf => [#{'$ref' => <<"#/components/schemas/discr_t">>}, FooOwn]},
+  BarType = #{allOf => [#{'$ref' => <<"#/components/schemas/discr_t">>}, BarOwn]},
+  Mapping = #{foo => <<"#/components/schemas/foo_t">>, bar => <<"#/components/schemas/bar_t">>},
+
+  DSchemaForDis = fun(DisSchema) ->
+    BaseProp = #{k3 => #{type => <<"integer">>}, dis => DisSchema},
+    DType = #{type => <<"object">>, properties => BaseProp, 'x-objAttr1' => [<<"k3">>],
+      discriminator => #{propertyName => <<"dis">>, mapping => Mapping}},
+    #{components => #{schemas => #{discr_t => DType, foo_t => FooType, bar_t => BarType}}}
+  end,
+
+  % Easy case: discriminator is defined as oneOf(const) and passed explicitly
+  DSchema1 = DSchemaForDis(#{oneOf => [#{const => <<"foo">>}, #{const => <<"bar">>}]}),
+  #{dis := foo, k1 := 101, '$explain' := Explain1foo} = openapi_schema:process(#{dis => <<"foo">>},
+    #{type => discr_t, whole_schema => DSchema1, apply_defaults => true, explain => [effective_schema]}),
+  #{dis := bar, k2 := 22, '$explain' := Explain1bar} = openapi_schema:process(#{dis => <<"bar">>},
+    #{type => discr_t, whole_schema => DSchema1, apply_defaults => true, explain => [effective_schema]}),
+
+  #{effective_schema := #{properties := Eff1fooProps} = Eff1foo} = Explain1foo,
+  [<<"k1">>,<<"k3">>] = lists:sort(maps:get('x-objAttr1', Eff1foo)),
+  [dis, k1, k3] = lists:sort(maps:keys(Eff1fooProps)),
+  #{k1 := #{'x-attr1' := <<"val1">>}} = Eff1fooProps,
+
+  #{effective_schema := #{properties := Eff1barProps} = Eff1bar} = Explain1bar,
+  [<<"k3">>] = maps:get('x-objAttr1', Eff1bar),
+  [2] = maps:get('x-objAttr2', Eff1bar),
+  [dis, k2, k3] = lists:sort(maps:keys(Eff1barProps)),
+  #{k2 := #{'x-attr2' := true}} = Eff1barProps,
   ok.

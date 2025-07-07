@@ -17,7 +17,7 @@
   is_map_key(const,Schema)
 )).
 
--define(AVAILABLE_EXPLAIN_KEYS, [required]).
+-define(AVAILABLE_EXPLAIN_KEYS, [required, effective_schema]).
 
 
 -spec load_schema(Schema :: map(), Name :: atom()) -> Schema :: map().
@@ -153,11 +153,12 @@ encode3(#{allOf := Choices}, Opts, Input, Path) ->
     ({N,Choice}, Obj) ->
       case encode3(Choice, Opts, Input, Path ++ [N]) of
         {error, #{extra_keys := _Extrakeys, encoded := Obj1}} ->
-          merge_objects(Opts, Choice, [Obj, Obj1]);  % keep processing, all choices have to be processed for allOf
+          merge_objects(Opts, #{}, [Obj, Obj1]);  % keep processing, all choices have to be processed for allOf
         {error, E} ->
           {error, E};
         #{} = Obj1 ->
-          merge_objects(Opts, Choice, [Obj, Obj1])
+          % explain in Obj1 is already defined by encode3, so pass a bogus schema
+          merge_objects(Opts, #{}, [Obj, Obj1])
       end
   end, #{}, lists:zip(lists:seq(0,length(Choices)-1),Choices)),
   check_extra_keys(Input, Encoded, Opts);
@@ -182,10 +183,18 @@ encode3(#{anyOf := Choices}, Opts, Input, Path) ->
   check_extra_keys(Input, Encoded, Opts);
 
 % Skip discriminator resolving during of query check
-encode3(#{oneOf := _, discriminator := _} = Schema, #{query := true} = Opts, Input, Path) ->
+encode3(#{discriminator := _} = Schema, #{query := true} = Opts, Input, Path) ->
   encode3(maps:without([discriminator], Schema), Opts, Input, Path);
 
-encode3(#{oneOf := Types, discriminator := #{propertyName := DKey, mapping := DMap}} = Schema, Opts, Input, Path) ->
+encode3(#{discriminator := #{propertyName := DKey, mapping := DMap}} = Schema, Opts0, Input, Path)
+  when not is_map_key({skip_discriminator, DKey}, Opts0)
+->
+  Types = case Schema of
+    #{oneOf := OneOfTypes} -> OneOfTypes;
+    #{} -> [#{'$ref' => T} || T <- maps:values(DMap)]
+  end,
+  Opts = Opts0#{{skip_discriminator, DKey} => already_handled},
+
   % If possible, get the discriminator value as atom (for lookup in mapping)
   ADKey = binary_to_atom(DKey),
   DefaultFun = fun(Input_) ->
@@ -202,7 +211,7 @@ encode3(#{oneOf := Types, discriminator := #{propertyName := DKey, mapping := DM
   ADvalue1 = DefaultFun(Input),
   ADvalue2 = case ADvalue1 of
     undefined ->
-      Try = encode3(hd(Types), Opts#{apply_defaults => true}, Input, Path),
+      Try = encode3(hd(Types), Opts#{apply_defaults => true, required_obj_keys => drop}, Input, Path),
       DefaultFun(Try);
     _ ->
       ADvalue1
@@ -216,7 +225,19 @@ encode3(#{oneOf := Types, discriminator := #{propertyName := DKey, mapping := DM
     {_, undefined} ->
       {error, #{error => discriminator_unmapped, path => Path, propertyName => DKey, value => ADvalue2}};
     {_, _} ->
-      encode3(#{'$ref' => DChoice}, Opts, Input, Path)
+      Result0 = encode3(#{'$ref' => DChoice}, Opts, Input, Path),
+      case is_map(Result0) andalso maps:values(maps:with([DKey, ADKey], Result0)) of
+        false ->
+          % Error
+          Result0;
+        [<<_/binary>>] ->
+          % discriminator value not described as const, but has type: string
+          (maps:without([DKey, ADKey], Result0))#{ADKey => ADvalue2};
+        [ADvalue2] ->
+          Result0;
+        [] ->
+          Result0
+      end
   end;
 
 encode3(#{oneOf := Choices}, Opts, Input, Path) ->
@@ -265,18 +286,16 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
       IsRequired = (lists:member(FieldBin, RequiredKeys) orelse IsPrimary),
       IsWriteAccess = maps:get(access_type, Opts, read) == write,
 
-      ExtractedValue = case Input of
-        #{Field := Value_} ->
-          {ok, Value_};
-        #{FieldBin := Value_} ->
-          {ok, Value_};
-        #{} ->
-          undefined
-      end,
       ApplyDefaults = maps:get(apply_defaults, Opts, false),
-      Default = case Prop of
-        #{default := DefaultValue} when ApplyDefaults -> #{Field => DefaultValue};
-        _ -> #{}
+      EffectiveValue = case {Input, Prop} of
+        {#{Field := Value_}, #{}} ->
+          {ok, Value_};
+        {#{FieldBin := Value_}, #{}} ->
+          {ok, Value_};
+        {#{}, #{default := DefaultValue}} when ApplyDefaults ->
+          {ok, DefaultValue};
+        {#{}, #{}} ->
+          undefined
       end,
 
       NullableProp = case Prop of
@@ -288,7 +307,7 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
           false
       end,
       Patching = maps:get(patch, Opts, undefined) == true,
-      UpdatedObj = case ExtractedValue of
+      UpdatedObj = case EffectiveValue of
         {ok, NullFlag} when Query andalso (NullFlag == null orelse NullFlag == not_null) ->
           Obj#{Field => NullFlag};
 
@@ -309,7 +328,7 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
               Obj#{Field => Value1}
           end;
         undefined ->
-          maps:merge(Default,Obj)
+          Obj
       end,
       UpdatedObj
   end, #{}, maps:merge(Artificial,Properties)),
@@ -536,6 +555,8 @@ validate_string_pattern(Input, RegExp) ->
   case re:run(Input, RegExp) of
     {match, _} ->
       Input;
+    nomatch when element(1, RegExp) == re_pattern ->
+      {error, #{error => nomatch_pattern}};
     nomatch ->
       {error, #{error => nomatch_pattern, pattern => RegExp}}
   end.
@@ -591,6 +612,10 @@ merge_objects(Opts, Schema, Objs) ->
         (Obj, Acc) -> lists:merge(maps:get(required, maps:get('$explain', Obj, #{}), []), Acc)
       end, get_required_keys(Schema, Opts), Objs),
       #{'$explain' => #{required => RequiredKeys}};
+    #{explain := [effective_schema]} ->
+      PrevEffSchemas = [ES || #{'$explain' := #{effective_schema := ES}} <- Objs],
+      EffectiveSchema = lists:foldl(fun merge_schemas/2, Schema, PrevEffSchemas),
+      #{'$explain' => #{effective_schema => EffectiveSchema}};
     _ -> #{}
   end,
   lists:foldl(fun
@@ -598,6 +623,25 @@ merge_objects(Opts, Schema, Objs) ->
     ({error, E}, _) -> {error, E};
     (_, {error, E}) -> {error, E}
   end, ExplainMap, Objs).
+
+% Merge schemas for e.g. allOf for introspection.
+% Lists are concatenated
+% Maps are deep-merged
+% When given two scalar values, second one has priority
+%
+% So, attributes with list values (like required) are collected across variants
+merge_schemas(S1, S2) when is_map(S1), is_map(S2) ->
+  S2m = maps:map(fun(K, V) -> merge_schemas(maps:get(K, S1, undefined), V) end, S2),
+  maps:merge(S1, S2m);
+merge_schemas(L1, L2) when is_list(L1), is_list(L2) ->
+  L1 ++ L2;
+merge_schemas(_, S2) when is_map(S2) ->
+  S2;
+merge_schemas(S1, _) when is_map(S1) ->
+  S1;
+merge_schemas(_, V) ->
+  V.
+
 
 check_explain_keys(Keys) when is_list(Keys) ->
   [error({unknown_option,explain,Key}) || Key <- Keys, lists:member(Key, ?AVAILABLE_EXPLAIN_KEYS) =/= true],

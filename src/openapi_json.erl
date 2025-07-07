@@ -20,8 +20,12 @@ decode_with_atoms(Bin) ->
   Object.
 
 encode(Source) ->
+  Encode = fun
+    (undefined, Encoder) -> json:encode_atom(null, Encoder);
+    (Other, Encoder) -> json:encode_value(Other, Encoder)
+  end,
   try
-    iolist_to_binary(json:encode(Source))
+    iolist_to_binary(json:encode(Source, Encode))
   catch
     _:_:_ -> iolist_to_binary(json:encode(#{error => error_in_json_encoder, input => iolist_to_binary(io_lib:format("~p",[Source]))}))
   end.
