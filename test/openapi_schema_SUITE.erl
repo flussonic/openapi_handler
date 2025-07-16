@@ -17,6 +17,7 @@ groups() ->
       nullable_by_oneof,
       discriminator,
       discriminator_default_missing_fields,
+      discriminator_default_wrong_format,
       recursive_discriminator,
       non_object_validate,
       regexp_pattern,
@@ -229,6 +230,26 @@ discriminator_default_missing_fields(_) ->
   {error, #{missing_required := [<<"k3">>]}} = openapi_schema:process(#{}, #{type => discr_t, whole_schema => DSchema_foo, required_obj_keys => error}),
   DSchema_bar = DSchemaForDis(#{type => <<"string">>, default => <<"bar">>}),
   {error, #{missing_required := [<<"k2">>]}} = openapi_schema:process(#{k3 => 1}, #{type => discr_t, whole_schema => DSchema_bar, required_obj_keys => error}),
+  ok.
+
+
+discriminator_default_wrong_format(_) ->
+  FooProp = #{dis => #{type => <<"string">>}, k1 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}},
+  BarProp = #{dis => #{type => <<"string">>}, k2 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}},
+  FooOwn = #{type => <<"object">>, properties => FooProp, required => [<<"k1">>, <<"k3">>]},
+  BarOwn = #{type => <<"object">>, properties => BarProp, required => [<<"k2">>, <<"k3">>]},
+  FooType = #{allOf => [#{'$ref' => <<"#/components/schemas/discr_t">>}, FooOwn]},
+  BarType = #{allOf => [#{'$ref' => <<"#/components/schemas/discr_t">>}, BarOwn]},
+  Mapping = #{foo => <<"#/components/schemas/foo_t">>, bar => <<"#/components/schemas/bar_t">>},
+  DSchemaForDis = fun(DisSchema) ->
+    BaseProp = #{dis => DisSchema},
+    DType = #{type => <<"object">>, properties => BaseProp, discriminator => #{propertyName => <<"dis">>, mapping => Mapping}},
+    #{components => #{schemas => #{discr_t => DType, foo_t => FooType, bar_t => BarType}}}
+  end,
+  DSchema_foo = DSchemaForDis(#{type => <<"string">>, default => <<"foo">>}),
+  {error, #{error := not_integer}} = openapi_schema:process(#{k3 => [<<"BAD">>]}, #{type => discr_t, whole_schema => DSchema_foo, required_obj_keys => error}),
+  DSchema_bar = DSchemaForDis(#{type => <<"string">>, default => <<"bar">>}),
+  {error, #{error := not_integer}} = openapi_schema:process(#{k3 => [<<"BAD">>]}, #{type => discr_t, whole_schema => DSchema_bar, required_obj_keys => error}),
   ok.
 
 

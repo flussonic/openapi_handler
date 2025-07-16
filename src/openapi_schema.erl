@@ -208,10 +208,11 @@ encode3(#{discriminator := #{propertyName := DKey, mapping := DMap}} = Schema, O
       #{} -> undefined
     end
   end,
-  ADvalue1 = DefaultFun(Input),
+  DiscrInput = maps:with([DKey, ADKey], Input),
+  ADvalue1 = DefaultFun(DiscrInput),
   ADvalue2 = case ADvalue1 of
     undefined ->
-      Try = encode3(hd(Types), Opts#{apply_defaults => true, required_obj_keys => drop}, Input, Path),
+      Try = encode3(hd(Types), Opts#{apply_defaults => true, required_obj_keys => drop}, DiscrInput, Path),
       DefaultFun(Try);
     _ ->
       ADvalue1
