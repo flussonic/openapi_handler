@@ -466,6 +466,7 @@ encode3(#{enum := Choices, type := <<"string">>}, #{auto_convert := Convert}, In
 encode3(#{type := <<"string">>} = Spec, #{auto_convert := Convert} = Options, Input, Path) ->
   {Input1, InputForValidation} = case Input of
     _ when is_binary(Input) -> {Input, Input};
+    _ when is_boolean(Input) -> {{error, #{error => not_string, path => Path, input => Input}}, undefined};
     _ when is_atom(Input) andalso Convert -> {atom_to_binary(Input), atom_to_binary(Input)};
     _ when is_atom(Input) -> {Input, atom_to_binary(Input)};
     _ -> {{error, #{error => not_string, path => Path, input => Input}}, undefined}

@@ -15,6 +15,7 @@ groups() ->
       extra_keys_drop,
       null_in_array,
       nullable_by_oneof,
+      boolean_vs_string,
       discriminator,
       discriminator_default_missing_fields,
       discriminator_default_wrong_format,
@@ -115,6 +116,12 @@ nullable_by_oneof(_) ->
   % Normalize the given object with a nulled key as much as possible
   Expect2 = #{nk => undefined, k2 => 42},
   Expect2 = openapi_schema:process(#{nk => null}, #{schema => Schema, extra_obj_key => error, apply_defaults => true}),
+  ok.
+
+boolean_vs_string(_) ->
+  % Even when auto_convert is enabled (default behaviour) consider boolean values not valid strings
+  {error, _} = openapi_schema:process(true, #{schema => #{type => <<"string">>}}),
+  {error, _} = openapi_schema:process(false, #{schema => #{type => <<"string">>}}),
   ok.
 
 discriminator(_) ->
