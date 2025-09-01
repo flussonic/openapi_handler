@@ -35,6 +35,7 @@ groups() ->
       check_explain_on_error,
       one_of_integer_const,
       one_of_const_default,
+      drop_unidirectional_keys,
       filter_read_only_props
     ]},
     {introspection, [], [
@@ -430,6 +431,27 @@ one_of_const_default(_) ->
   #{k1 := world} = openapi_schema:process(
         #{},
         #{schema => FooType, apply_defaults => true}),
+  ok.
+
+
+drop_unidirectional_keys(_) ->
+  Schema = #{
+    type => <<"object">>,
+    properties => #{
+      pn => #{type => <<"integer">>},
+      pr => #{type => <<"integer">>, readOnly => true},
+      pw => #{type => <<"integer">>, writeOnly => true}
+    }
+  },
+  % 'raw' access does not involve any read/write filtering logic
+  ObjRaw = openapi_schema:process(#{pn => 1, pr => 2, pw => 3}, #{schema => Schema, extra_obj_key => drop, access_type => raw}),
+  [pn, pr, pw] = lists:sort(maps:keys(ObjRaw)),
+  % 'write' access drops readOnly properties
+  ObjW = openapi_schema:process(#{pn => 1, pr => 2, pw => 3}, #{schema => Schema, extra_obj_key => drop, access_type => write}),
+  [pn, pw] = lists:sort(maps:keys(ObjW)),
+  % 'read' access drops writeOnly properties
+  ObjR = openapi_schema:process(#{pn => 1, pr => 2, pw => 3}, #{schema => Schema, extra_obj_key => drop, access_type => read}),
+  [pn, pr] = lists:sort(maps:keys(ObjR)),
   ok.
 
 filter_read_only_props(_) ->

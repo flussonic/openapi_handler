@@ -438,18 +438,12 @@ required_keys_filter(_) ->
 
 
 select_not_filters_required_keys(_) ->
+  % p3 is 'writeOnly', so it should be dropped in results
   #{elements := [Elem1,Elem1]} = openapi_client:call(test_schema_api, selectCollectionFields,
       #{json_body => #{p1 => 1, p2 => 2, p3 => 3, p4 => 4, p5 => 5}}),
-  #{p1 := 1, p2 := 2, p3 := 3, p4 := 4, p5 :=5} = Elem1,
+  #{p1 := 1, p2 := 2, p4 := 4, p5 :=5} = Elem1,
 
-  % p1, p2 are 'readOnly' required keys
-  #{elements := [Elem2,Elem2]} = openapi_client:call(test_schema_api, selectCollectionFields,
-      #{json_body => #{p1 => 1, p2 => 2, p3 => 3, p4 => 4, p5 => 5}, select => <<"p3">>}),
-  #{p1 := 1, p2 := 2, p3 := 3} = Elem2,
-  undefined = maps:get(p4, Elem2, undefined),
-  undefined = maps:get(p5, Elem2, undefined),
-
-  % p3 is 'writeOnly' required key
+  % p1, p2 are required keys, so they are returned despite not explicitly requested
   #{elements := [Elem3,Elem3]} = openapi_client:call(test_schema_api, selectCollectionFields,
       #{json_body => #{p1 => 1, p2 => 2, p3 => 3, p4 => 4, p5 => 5}, select => <<"p4">>}),
   #{p1 := 1, p2 := 2, p4 := 4} = Elem3,
