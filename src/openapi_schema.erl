@@ -88,6 +88,8 @@ prepare_type(#{oneOf := Types} = Type0) ->
   Type0#{oneOf := [prepare_type(T) || T <- Types]};
 prepare_type(#{type := <<"object">>, properties := Props} = Type0) ->
   Type0#{properties => maps:map(fun(_, T) -> prepare_type(T) end, Props)};
+prepare_type(#{type := <<"array">>, items := Items} = Type0) ->
+  Type0#{items => prepare_type(Items)};
 prepare_type(#{} = Type0) ->
   % Convert format name to atom. This matches validators syntax
   Type1 = case Type0 of
