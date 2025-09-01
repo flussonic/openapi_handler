@@ -49,6 +49,8 @@ init_per_suite(Config) ->
   openapi_handler:load_schema(SchemaPath, test_openapi),
   BigOpenapiPath = code:lib_dir(openapi_handler) ++ "/test/redocly-big-openapi.json",
   openapi_handler:load_schema(BigOpenapiPath, big_openapi),
+  ExamplePath = code:lib_dir(openapi_handler) ++ "/test/example-openapi.json",
+  openapi_handler:load_schema(ExamplePath, example_openapi),
   Config.
 
 end_per_suite(Config) ->
@@ -302,10 +304,18 @@ external_validators(_) ->
   {error, Err2} = openapi_schema:process(<<" ab cd">>, #{schema => Schema, validators => Validators}),
   #{error := wrong_format, format := no_space, detail := leading_space} = Err2,
 
-  % format validators work with loaded schema
-  % big_openapi.digest is a composition of allOf and object, so it needs schema to be properly prepared
-  #{password := <<"ab_cd">>} = openapi_schema:process(
-    #{username => <<"Joe">>, password => <<"ab cd">>}, #{name => big_openapi, type => digest, validators => #{password => fun no_space_validator/1}}),
+  % format validators work with loaded schema (to ensure openapi_schema:prepare_type works well)
+  % as simple value
+  <<"ab_cd">> = openapi_schema:process(<<"ab cd">>, #{name => example_openapi, type => external_validators_simple, validators => Validators}),
+  {error, _} = openapi_schema:process(<<" cd">>, #{name => example_openapi, type => external_validators_simple, validators => Validators}),
+  % as array item (nested)
+  [[<<"ab_cd">>]] = openapi_schema:process([[<<"ab cd">>]], #{name => example_openapi, type => external_validators_array, validators => Validators}),
+  {error, _} = openapi_schema:process([[<<" cd">>]], #{name => example_openapi, type => external_validators_array, validators => Validators}),
+  % as object key (nested)
+  #{in_object := #{prop1 := <<"ab_cd">>}} =
+    openapi_schema:process(#{in_object => #{prop1 => <<"ab cd">>}}, #{name => example_openapi, type => external_validators_object, validators => Validators}),
+  {error, _} =
+    openapi_schema:process(#{in_object => #{prop1 => <<" cd">>}}, #{name => example_openapi, type => external_validators_object, validators => Validators}),
 
   % format validator and pattern work simultaneously
   Schema2 = #{type => <<"string">>, format => no_space, pattern => <<"^[a-z]+$">>},
