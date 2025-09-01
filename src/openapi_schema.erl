@@ -47,7 +47,7 @@ process(Input, #{} = Opts) ->
     (patch,Flag) when Flag == true; Flag == false -> ok;
     (extra_obj_key,Flag) when Flag == drop; Flag == error -> ok;
     (required_obj_keys,Flag) when Flag == drop; Flag == error -> ok;
-    (access_type,Flag) when Flag == read; Flag == write -> ok;
+    (access_type,Flag) when Flag == read; Flag == write; Flag == raw -> ok;
     (explain,FlagList) -> check_explain_keys(FlagList);
     (K,V) -> error({unknown_option,K,V})
   end, Opts),
@@ -285,9 +285,11 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
 
       RequiredKeys = get_required_keys(Schema, Opts),
       IsReadOnly = maps:get(readOnly, Prop, false),
+      IsWriteOnly = maps:get(writeOnly, Prop, false),
       IsPrimary = maps:get('x-primary-key', Prop, false),
       IsRequired = (lists:member(FieldBin, RequiredKeys) orelse IsPrimary),
-      IsWriteAccess = maps:get(access_type, Opts, read) == write,
+      IsReadAccess = maps:get(access_type, Opts, raw) == read,
+      IsWriteAccess = maps:get(access_type, Opts, raw) == write,
 
       ApplyDefaults = maps:get(apply_defaults, Opts, false),
       EffectiveValue = case {Input, Prop} of
@@ -318,8 +320,11 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
         {ok, Null} when (Null == null orelse Null == undefined) andalso
           not NullableProp andalso not Patching ->
           Obj;
-        % Silently drop read only fields with write access
+        % Silently drop readOnly fields on write
         {ok, _Value} when IsWriteAccess andalso IsReadOnly andalso (not IsRequired) ->
+          Obj;
+        % Silently drop writeOnly fields on read
+        {ok, _Value} when IsReadAccess andalso IsWriteOnly andalso (not IsRequired) ->
           Obj;
         {ok, Value} ->
           case encode3(Prop#{nullable => NullableProp}, Opts, Value, Path ++ [Field]) of

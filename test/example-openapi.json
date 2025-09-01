@@ -1,0 +1,41 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "contact": { "email": "hello@exampl.com", "name": "Test", "url": "https://example.com/" },
+    "description": "dummy desc",
+    "title": "Test API",
+    "version": "0.1.0"
+  },
+  "components": {
+    "schemas": {
+      "external_validators_simple": {
+        "type": "string",
+        "format": "no_space"
+      },
+      "external_validators_array": {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "no_space"
+          }
+        }
+      },
+      "external_validators_object": {
+        "type": "object",
+        "properties": {
+          "in_object": {
+            "type": "object",
+            "properties": {
+              "prop1": {
+                "type": "string",
+                "format": "no_space"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
