@@ -207,7 +207,8 @@ encode3(#{discriminator := #{propertyName := DKey, mapping := DMap}} = Schema, O
         try binary_to_existing_atom(DValue) catch error:badarg -> DValue end;
       #{ADKey := DValue} when is_binary(DValue) ->
         try binary_to_existing_atom(DValue) catch error:badarg -> DValue end;
-      #{} -> undefined
+      #{} -> undefined;
+      {error, _} -> Input_
     end
   end,
   DiscrInput = maps:with([DKey, ADKey], Input),
@@ -225,6 +226,9 @@ encode3(#{discriminator := #{propertyName := DKey, mapping := DMap}} = Schema, O
       encode3(maps:without([discriminator], Schema), Opts, Input, Path);
     {undefined, _} ->
       {error, #{error => discriminator_missing, path => Path, propertyName => DKey}};
+    {{error, _}, _} ->
+      % this error comes from processing discriminator with first possible type, and may contain useful type error (e.g. not_string)
+      ADvalue2;
     {_, undefined} ->
       {error, #{error => discriminator_unmapped, path => Path, propertyName => DKey, value => ADvalue2}};
     {_, _} ->

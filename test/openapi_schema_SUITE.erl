@@ -165,6 +165,8 @@ discriminator(_) ->
   Foo5 = openapi_schema:process(#{k1 => 12, k2 => 34, k4 => 56}, #{type => discr_t, whole_schema => DSchema1}),
   [k1, k4] = lists:sort(maps:keys(Foo5)), % apply default
 
+  {error, #{error := not_string}} = openapi_schema:process(#{dis => 42}, #{type => discr_t, query => true, whole_schema => DSchema}),
+
   ok.
 
 % See example without oneOf at https://spec.openapis.org/oas/v3.1.0.html#discriminator-object
@@ -214,6 +216,8 @@ recursive_discriminator(_) ->
   #{dis := foo, k1 := 101} = openapi_schema:process(#{}, #{type => discr_t, whole_schema => DSchema3a, apply_defaults => true}),
   DSchema3b = DSchemaForDis(#{type => <<"string">>, default => <<"bar">>}),
   #{dis := bar, k2 := 22} = openapi_schema:process(#{}, #{type => discr_t, whole_schema => DSchema3b, apply_defaults => true}),
+
+  {error, #{error := not_string}} = openapi_schema:process(#{dis => 42}, #{type => discr_t, whole_schema => DSchema3b, apply_defaults => true}),
 
   [] = maps:keys(openapi_schema:process(#{}, #{type => discr_t, whole_schema => DSchema3b})),
   [k2, k3] = maps:keys(openapi_schema:process(#{k2 => 11, k3 => 435}, #{type => discr_t, whole_schema => DSchema3b})),
