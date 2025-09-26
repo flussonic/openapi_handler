@@ -34,6 +34,7 @@ groups() ->
       check_explain,
       check_explain_on_error,
       one_of_integer_const,
+      one_of_const_wrong_type,
       one_of_const_default,
       drop_unidirectional_keys,
       filter_read_only_props
@@ -437,6 +438,12 @@ one_of_const_default(_) ->
         #{schema => FooType, apply_defaults => true}),
   ok.
 
+one_of_const_wrong_type(_) ->
+  FooProp = #{k1 => #{oneOf => [#{const => <<"hello">>}, #{const => <<"world">>}]}},
+  FooType = #{type => <<"object">>, properties => FooProp},
+  {error, #{error := not_const}} = openapi_schema:process(#{k1 => #{}}, #{schema => FooType}),
+  {error, #{error := not_const}} = openapi_schema:process(#{k1 => []}, #{schema => FooType}),
+  ok.
 
 drop_unidirectional_keys(_) ->
   Schema = #{
