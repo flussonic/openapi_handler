@@ -42,8 +42,8 @@ start_http(Routes, ApiName) ->
 
 
 init_per_suite(Config) ->
+  inets:start(),
   {ok, _} = application:ensure_all_started(cowboy),
-  {ok, _} = application:ensure_all_started(lhttpc),
 
   PetstorePath = filename:join(code:lib_dir(openapi_handler),"test/redocly-petstore.json"),
   TestSchemaPath = filename:join(code:lib_dir(openapi_handler),"test/test_schema.json"),
@@ -183,9 +183,9 @@ json_body_parameters(_) ->
 broken_json(_) ->
   Port = integer_to_list(ranch:get_port(petstore_api_server)),
   JSON = "{\"key\":\"value\"]}",
-  {ok, {{400,_},Headers,Body}} = lhttpc:request("http://127.0.0.1:"++Port++"/test/yml/store/order", post,
-    [{"Content-Type", "application/json"}], JSON, 5000),
-  "application/json" = proplists:get_value("Content-Type", Headers),
+  Request = {"http://127.0.0.1:"++Port++"/test/yml/store/order", [], "application/json", JSON},
+  {ok, {{_, 400, _}, Headers, Body}} = httpc:request(post, Request, [{timeout, 5000}], [{body_format, binary}]),
+  "application/json" = proplists:get_value("content-type", Headers),
   #{<<"error">> := <<"broken_json">>} = openapi_json:decode(Body),
   ok.
 

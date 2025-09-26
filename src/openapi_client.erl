@@ -62,8 +62,15 @@ call(#{schema := Schema, uri := URI} = State, OperationId, Args0, Opts) when is_
         _ -> RequestBody
       end]),
       Timeout = proplists:get_value(timeout, Opts, 50000),
-      Result = case lhttpc:request(RequestURL, Method, RequestHeaders, RequestBody, Timeout) of
-        {ok, {{Code0,_},ResponseHeaders0,Bin0}} ->
+      Request = case Method of
+        get ->
+          {RequestURL, RequestHeaders};
+        _ ->
+          ContentType = proplists:get_value("Content-Type", RequestHeaders, "text/plain"),
+          {RequestURL, RequestHeaders, ContentType, RequestBody}
+      end,
+      Result = case httpc:request(Method, Request, [{timeout, Timeout}], [{body_format, binary}]) of
+        {ok, {{_, Code0, _}, ResponseHeaders0, Bin0}} ->
           {ok, Code0, [{string:to_lower(K),V} || {K,V} <- ResponseHeaders0], Bin0};
         {error, E0} ->
           {error, E0}
