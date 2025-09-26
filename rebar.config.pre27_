@@ -1,0 +1,14 @@
+% No deps by default to prevent conflicts
+{deps, [
+]}.
+
+{profiles, [
+  {dev, [
+    {deps, [
+      jsx,
+      {cowboy, "2.12.0"},
+      redbug
+    ]},
+    {ct_opts, [{ct_hooks, [cth_surefire]}]}
+  ]}
+]}.
