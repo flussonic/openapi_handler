@@ -462,6 +462,9 @@ encode3(#{const := Value}, #{auto_convert := Convert}, Input, Path) when is_atom
     _ -> {error, #{error => not_const2, path => Path, input => Input, value => Value}}
   end;
 
+encode3(#{const := Value}, #{}, Input, Path) ->
+  {error, #{error => not_const, path => Path, input => Input, value => Value}};
+
 encode3(#{enum := Choices, type := <<"string">>}, #{auto_convert := Convert}, Input, Path) ->
   InputValue = case Input of
     _ when is_binary(Input) -> Input;
