@@ -486,11 +486,12 @@ encode3(#{type := <<"string">>} = Spec, #{auto_convert := Convert} = Options, In
     {error, _} ->
       Input1;
     _ ->
+      Length = string:length(InputForValidation),
       case Spec of
-        #{minLength := MinLength} when size(InputForValidation) < MinLength ->
-          {error, #{error => too_short, path => Path, input => Input, detail => length(Input), min_length => MinLength}};
-        #{maxLength := MaxLength} when size(InputForValidation) > MaxLength ->
-          {error, #{error => too_long, path => Path, input => Input, detail => length(Input), max_length => MaxLength}};
+        #{minLength := MinLength} when Length < MinLength ->
+          {error, #{error => too_short, path => Path, input => Input, detail => Length, min_length => MinLength}};
+        #{maxLength := MaxLength} when Length > MaxLength ->
+          {error, #{error => too_long, path => Path, input => Input, detail => Length, max_length => MaxLength}};
         #{} ->
           Format = maps:get(format, Spec, undefined),
           Validators = maps:get(validators, Options),

@@ -333,10 +333,21 @@ external_validators(_) ->
 
 
 min_max_length(_) ->
-  {error, #{error := too_short}} = 
+  {error, #{error := too_short, detail := 3}} =
     openapi_schema:process(<<"123">>, #{schema => #{type => <<"string">>, minLength => 5}}),
-  {error, #{error := too_long}} = 
+  {error, #{error := too_long, detail := 3}} =
     openapi_schema:process(<<"123">>, #{schema => #{type => <<"string">>, maxLength => 2}}),
+
+  {error, #{error := too_short, detail := 4}} =
+    openapi_schema:process(atom, #{schema => #{type => <<"string">>, minLength => 5}}),
+  {error, #{error := too_long, detail := 4}} =
+    openapi_schema:process(atom, #{schema => #{type => <<"string">>, maxLength => 2}}),
+
+  UTFString = unicode:characters_to_binary([128578,128579]), % 2 code points, but 8 bytes
+  {error, #{error := too_short, detail := 2}} =
+    openapi_schema:process(UTFString, #{schema => #{type => <<"string">>, minLength => 3}}),
+  {error, #{error := too_long, detail := 2}} =
+    openapi_schema:process(UTFString, #{schema => #{type => <<"string">>, maxLength => 1}}),
   ok.
 
 
