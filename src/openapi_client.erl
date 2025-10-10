@@ -61,20 +61,8 @@ call(#{schema := Schema, uri := URI} = State, OperationId, Args0, Opts) when is_
         #{raw_body := _} -> <<"raw_file_upload">>;
         _ -> RequestBody
       end]),
-      Timeout = proplists:get_value(timeout, Opts, 50000),
-      Request = case Method of
-        get ->
-          {RequestURL, RequestHeaders};
-        _ ->
-          ContentType = proplists:get_value("Content-Type", RequestHeaders, "text/plain"),
-          {RequestURL, RequestHeaders, ContentType, RequestBody}
-      end,
-      Result = case httpc:request(Method, Request, [{timeout, Timeout}], [{body_format, binary}]) of
-        {ok, {{_, Code0, _}, ResponseHeaders0, Bin0}} ->
-          {ok, Code0, [{string:to_lower(K),V} || {K,V} <- ResponseHeaders0], Bin0};
-        {error, E0} ->
-          {error, E0}
-      end,
+      HttpRequestFun = proplists:get_value(http_request_fun, Opts, fun http_request_httpc/5),
+      Result = HttpRequestFun(Method, RequestURL, RequestHeaders, RequestBody, Opts),
 
       case Result of
         {ok, Code,ResponseHeaders,Bin} when is_map_key(Code, Responses) ->
@@ -137,6 +125,31 @@ call(#{} = State, OperationId, Args, Opts) ->
   end.
 
 
+-spec http_request_httpc(
+    Method :: get | post | put | patch | delete,
+    URL :: uri_string:uri_string(),
+    Headers :: [{string(), string()}],
+    Body :: binary(),
+    Opts :: proplists:proplist()
+) ->
+  {ok, Status :: integer(), Headers :: [{NameLowercase :: string(), string()}], Body :: binary()} |
+  {error, any()}.
+
+http_request_httpc(Method, RequestURL, RequestHeaders, RequestBody, Opts) ->
+  Timeout = proplists:get_value(timeout, Opts, 50000),
+  Request = case Method of
+    get ->
+      {RequestURL, RequestHeaders};
+    _ ->
+      ContentType = proplists:get_value("Content-Type", RequestHeaders, "text/plain"),
+      {RequestURL, RequestHeaders, ContentType, RequestBody}
+  end,
+  case httpc:request(Method, Request, [{timeout, Timeout}], [{body_format, binary}]) of
+    {ok, {{_, Code0, _}, ResponseHeaders0, Bin0}} ->
+      {ok, Code0, [{string:to_lower(K), V} || {K, V} <- ResponseHeaders0], Bin0};
+    {error, E0} ->
+      {error, E0}
+  end.
 
 
 search_operation(OperationId, #{paths := Paths}) ->
