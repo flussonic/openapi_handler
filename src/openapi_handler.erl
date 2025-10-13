@@ -528,7 +528,7 @@ terminate(_,_,_) ->
 
 get_schema_opts(#{schema_opts := #{} = SchemaOpts}) ->
   maps:map(fun
-    (extra_obj_key,Flag) when Flag == drop; Flag == error -> ok;
+    (extra_obj_key,Flag) when Flag == drop; Flag == error; Flag == pass -> ok;
     (K,V) -> error({bad_schema_opt,K,V})
   end, SchemaOpts),
   SchemaOpts;
