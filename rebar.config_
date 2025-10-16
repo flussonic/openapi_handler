@@ -12,5 +12,16 @@
       redbug
     ]},
     {ct_opts, [{ct_hooks, [cth_surefire]}]}
+  ]},
+  {dev_legacy, [
+    {deps, [
+      jsx,
+      yamerl,
+      {cowboy, "1.0.1"},
+      {lhttpc, {git, "https://github.com/erlyvideo/lhttpc.git", {branch, "master"}}},
+      redbug
+    ]},
+    {erl_opts, [{d,legacy}]},
+    {ct_opts, [{ct_hooks, [cth_surefire]}]}
   ]}
 ]}.
