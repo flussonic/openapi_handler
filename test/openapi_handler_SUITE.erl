@@ -36,10 +36,15 @@ groups() ->
    ]}
   ].
 
+-ifdef(legacy).
+start_http(Routes, ApiName) ->
+  cowboy:start_http(ApiName, 1, [{port, 0}],
+    [{env, [{dispatch, cowboy_router:compile([{'_', Routes}])}]}]).
+-else.
 start_http(Routes, ApiName) ->
   cowboy:start_clear(ApiName, [{port, 0}],
     #{env => #{dispatch => cowboy_router:compile([{'_', Routes}])}}).
-
+-endif.
 
 init_per_suite(Config) ->
   {ok, _} = application:ensure_all_started(cowboy),
@@ -280,7 +285,7 @@ json_array_ok(_) ->
   ok.
 
 putFile(#{req := Req, '$cowboy_req' := CowboyReq}) ->
-  <<"PUT">> = cowboy_req:method(CowboyReq),
+  <<"PUT">> = ?MODULE:method(CowboyReq),
   Body = <<"{\"size\":100}">>,
   Req1 = reply(200, #{<<"content-length">> => byte_size(Body), <<"content-type">> => <<"application/json">>}, Body, Req),
   {done, Req1}.

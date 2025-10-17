@@ -22,3 +22,19 @@ run-test:
     expire_in: 1 week
     paths:
       - test-logs
+
+run-test-legacy:
+  stage: test
+  needs:
+    - prepare-src
+  script:
+    - mkdir -p test-logs-legacy
+    - docker run --rm -v ${PWD}/test-logs-legacy:/openapi_handler/test-logs openapi_handler make ci-test-legacy
+  artifacts:
+    reports:
+      junit: test-logs-legacy/*/junit_report.xml
+    when: always
+    name: "${CI_JOB_STAGE}_${BRANCH_NAME}-test-legacy"
+    expire_in: 1 week
+    paths:
+      - test-logs-legacy
