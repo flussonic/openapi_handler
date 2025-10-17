@@ -87,7 +87,6 @@ Also see validation quirks below.
 You can customize the way objects are processed. 
 Available options:
  * `#{extra_obj_key => drop}` -- the original object may contain keys not described by schema, just ignore them instead of raising an error
- * `#{extra_obj_key => pass}` -- the original object may contain keys not described by schema, just pass them as is instead of raising an error
  * `#{required_obj_keys => error}` -- raise an error when original object misses some required keys
  * `#{validators => #{Format :: atom() => Validator}}`  
    `Validator :: fun(Value) -> {ok, ConvertedValue} | {error, #{}}`  

@@ -45,7 +45,7 @@ process(Input, #{} = Opts) ->
     (query,Flag) when Flag == true; Flag == false -> ok;
     (apply_defaults,Flag) when Flag == true; Flag == false -> ok;
     (patch,Flag) when Flag == true; Flag == false -> ok;
-    (extra_obj_key,Flag) when Flag == drop; Flag == error; Flag == pass -> ok;
+    (extra_obj_key,Flag) when Flag == drop; Flag == error -> ok;
     (required_obj_keys,Flag) when Flag == drop; Flag == error -> ok;
     (access_type,Flag) when Flag == read; Flag == write -> ok;
     (explain,FlagList) -> check_explain_keys(FlagList);
@@ -592,11 +592,6 @@ check_extra_keys(Input, Encoded, #{extra_obj_key := error} = Opts) when is_map(I
     [_|_] -> {error, #{extra_keys => ExtraKeys, encoded => Encoded}};
     _ -> Encoded
   end;
-
-check_extra_keys(Input, Encoded, #{extra_obj_key := pass}) when is_map(Input) andalso is_map(Encoded) andalso map_size(Encoded) > 0 ->
-  EncodedKeys = [K || K <- maps:keys(Encoded), is_atom(K)],
-  ExtraKeys = maps:keys(Input) -- [atom_to_binary(K) || K <- EncodedKeys],
-  maps:merge(maps:with(EncodedKeys, Encoded), maps:with(ExtraKeys, Input));
 
 check_extra_keys(_Input, Encoded, _Opts) ->
   Encoded.
