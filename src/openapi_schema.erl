@@ -47,7 +47,7 @@ process(Input, #{} = Opts) ->
     (patch,Flag) when Flag == true; Flag == false -> ok;
     (extra_obj_key,Flag) when Flag == drop; Flag == error -> ok;
     (required_obj_keys,Flag) when Flag == drop; Flag == error -> ok;
-    (access_type,Flag) when Flag == read; Flag == write -> ok;
+    (access_type,Flag) when Flag == read; Flag == write; Flag == raw -> ok;
     (explain,FlagList) -> check_explain_keys(FlagList);
     (K,V) -> error({unknown_option,K,V})
   end, Opts),
@@ -88,6 +88,8 @@ prepare_type(#{oneOf := Types} = Type0) ->
   Type0#{oneOf := [prepare_type(T) || T <- Types]};
 prepare_type(#{type := <<"object">>, properties := Props} = Type0) ->
   Type0#{properties => maps:map(fun(_, T) -> prepare_type(T) end, Props)};
+prepare_type(#{type := <<"array">>, items := Items} = Type0) ->
+  Type0#{items => prepare_type(Items)};
 prepare_type(#{} = Type0) ->
   % Convert format name to atom. This matches validators syntax
   Type1 = case Type0 of
@@ -205,13 +207,15 @@ encode3(#{discriminator := #{propertyName := DKey, mapping := DMap}} = Schema, O
         try binary_to_existing_atom(DValue) catch error:badarg -> DValue end;
       #{ADKey := DValue} when is_binary(DValue) ->
         try binary_to_existing_atom(DValue) catch error:badarg -> DValue end;
-      #{} -> undefined
+      #{} -> undefined;
+      {error, _} -> Input_
     end
   end,
-  ADvalue1 = DefaultFun(Input),
+  DiscrInput = maps:with([DKey, ADKey], Input),
+  ADvalue1 = DefaultFun(DiscrInput),
   ADvalue2 = case ADvalue1 of
     undefined ->
-      Try = encode3(hd(Types), Opts#{apply_defaults => true, required_obj_keys => drop}, Input, Path),
+      Try = encode3(hd(Types), Opts#{apply_defaults => true, required_obj_keys => drop}, DiscrInput, Path),
       DefaultFun(Try);
     _ ->
       ADvalue1
@@ -222,6 +226,9 @@ encode3(#{discriminator := #{propertyName := DKey, mapping := DMap}} = Schema, O
       encode3(maps:without([discriminator], Schema), Opts, Input, Path);
     {undefined, _} ->
       {error, #{error => discriminator_missing, path => Path, propertyName => DKey}};
+    {{error, _}, _} ->
+      % this error comes from processing discriminator with first possible type, and may contain useful type error (e.g. not_string)
+      ADvalue2;
     {_, undefined} ->
       {error, #{error => discriminator_unmapped, path => Path, propertyName => DKey, value => ADvalue2}};
     {_, _} ->
@@ -282,9 +289,11 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
 
       RequiredKeys = get_required_keys(Schema, Opts),
       IsReadOnly = maps:get(readOnly, Prop, false),
+      IsWriteOnly = maps:get(writeOnly, Prop, false),
       IsPrimary = maps:get('x-primary-key', Prop, false),
       IsRequired = (lists:member(FieldBin, RequiredKeys) orelse IsPrimary),
-      IsWriteAccess = maps:get(access_type, Opts, read) == write,
+      IsReadAccess = maps:get(access_type, Opts, raw) == read,
+      IsWriteAccess = maps:get(access_type, Opts, raw) == write,
 
       ApplyDefaults = maps:get(apply_defaults, Opts, false),
       EffectiveValue = case {Input, Prop} of
@@ -315,8 +324,11 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
         {ok, Null} when (Null == null orelse Null == undefined) andalso
           not NullableProp andalso not Patching ->
           Obj;
-        % Silently drop read only fields with write access
+        % Silently drop readOnly fields on write
         {ok, _Value} when IsWriteAccess andalso IsReadOnly andalso (not IsRequired) ->
+          Obj;
+        % Silently drop writeOnly fields on read
+        {ok, _Value} when IsReadAccess andalso IsWriteOnly andalso (not IsRequired) ->
           Obj;
         {ok, Value} ->
           case encode3(Prop#{nullable => NullableProp}, Opts, Value, Path ++ [Field]) of
@@ -450,6 +462,9 @@ encode3(#{const := Value}, #{auto_convert := Convert}, Input, Path) when is_atom
     _ -> {error, #{error => not_const2, path => Path, input => Input, value => Value}}
   end;
 
+encode3(#{const := Value}, #{}, Input, Path) ->
+  {error, #{error => not_const, path => Path, input => Input, value => Value}};
+
 encode3(#{enum := Choices, type := <<"string">>}, #{auto_convert := Convert}, Input, Path) ->
   InputValue = case Input of
     _ when is_binary(Input) -> Input;
@@ -465,6 +480,7 @@ encode3(#{enum := Choices, type := <<"string">>}, #{auto_convert := Convert}, In
 encode3(#{type := <<"string">>} = Spec, #{auto_convert := Convert} = Options, Input, Path) ->
   {Input1, InputForValidation} = case Input of
     _ when is_binary(Input) -> {Input, Input};
+    _ when is_boolean(Input) -> {{error, #{error => not_string, path => Path, input => Input}}, undefined};
     _ when is_atom(Input) andalso Convert -> {atom_to_binary(Input), atom_to_binary(Input)};
     _ when is_atom(Input) -> {Input, atom_to_binary(Input)};
     _ -> {{error, #{error => not_string, path => Path, input => Input}}, undefined}
@@ -473,11 +489,12 @@ encode3(#{type := <<"string">>} = Spec, #{auto_convert := Convert} = Options, In
     {error, _} ->
       Input1;
     _ ->
+      Length = string:length(InputForValidation),
       case Spec of
-        #{minLength := MinLength} when size(InputForValidation) < MinLength ->
-          {error, #{error => too_short, path => Path, input => Input, min_length => MinLength}};
-        #{maxLength := MaxLength} when size(InputForValidation) > MaxLength ->
-          {error, #{error => too_long, path => Path, input => Input, max_length => MaxLength}};
+        #{minLength := MinLength} when Length < MinLength ->
+          {error, #{error => too_short, path => Path, input => Input, detail => Length, min_length => MinLength}};
+        #{maxLength := MaxLength} when Length > MaxLength ->
+          {error, #{error => too_long, path => Path, input => Input, detail => Length, max_length => MaxLength}};
         #{} ->
           Format = maps:get(format, Spec, undefined),
           Validators = maps:get(validators, Options),

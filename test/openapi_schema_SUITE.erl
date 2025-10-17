@@ -15,8 +15,10 @@ groups() ->
       extra_keys_drop,
       null_in_array,
       nullable_by_oneof,
+      boolean_vs_string,
       discriminator,
       discriminator_default_missing_fields,
+      discriminator_default_wrong_format,
       recursive_discriminator,
       non_object_validate,
       regexp_pattern,
@@ -32,7 +34,9 @@ groups() ->
       check_explain,
       check_explain_on_error,
       one_of_integer_const,
+      one_of_const_wrong_type,
       one_of_const_default,
+      drop_unidirectional_keys,
       filter_read_only_props
     ]},
     {introspection, [], [
@@ -47,6 +51,8 @@ init_per_suite(Config) ->
   openapi_handler:load_schema(SchemaPath, test_openapi),
   BigOpenapiPath = code:lib_dir(openapi_handler) ++ "/test/redocly-big-openapi.json",
   openapi_handler:load_schema(BigOpenapiPath, big_openapi),
+  ExamplePath = code:lib_dir(openapi_handler) ++ "/test/example-openapi.json",
+  openapi_handler:load_schema(ExamplePath, example_openapi),
   Config.
 
 end_per_suite(Config) ->
@@ -116,6 +122,12 @@ nullable_by_oneof(_) ->
   Expect2 = openapi_schema:process(#{nk => null}, #{schema => Schema, extra_obj_key => error, apply_defaults => true}),
   ok.
 
+boolean_vs_string(_) ->
+  % Even when auto_convert is enabled (default behaviour) consider boolean values not valid strings
+  {error, _} = openapi_schema:process(true, #{schema => #{type => <<"string">>}}),
+  {error, _} = openapi_schema:process(false, #{schema => #{type => <<"string">>}}),
+  ok.
+
 discriminator(_) ->
   FooProp = #{dis => #{type => <<"string">>}, k1 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}},
   BarProp = #{dis => #{type => <<"string">>}, k2 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}},
@@ -153,6 +165,8 @@ discriminator(_) ->
 
   Foo5 = openapi_schema:process(#{k1 => 12, k2 => 34, k4 => 56}, #{type => discr_t, whole_schema => DSchema1}),
   [k1, k4] = lists:sort(maps:keys(Foo5)), % apply default
+
+  {error, #{error := not_string}} = openapi_schema:process(#{dis => 42}, #{type => discr_t, query => true, whole_schema => DSchema}),
 
   ok.
 
@@ -204,6 +218,8 @@ recursive_discriminator(_) ->
   DSchema3b = DSchemaForDis(#{type => <<"string">>, default => <<"bar">>}),
   #{dis := bar, k2 := 22} = openapi_schema:process(#{}, #{type => discr_t, whole_schema => DSchema3b, apply_defaults => true}),
 
+  {error, #{error := not_string}} = openapi_schema:process(#{dis => 42}, #{type => discr_t, whole_schema => DSchema3b, apply_defaults => true}),
+
   [] = maps:keys(openapi_schema:process(#{}, #{type => discr_t, whole_schema => DSchema3b})),
   [k2, k3] = maps:keys(openapi_schema:process(#{k2 => 11, k3 => 435}, #{type => discr_t, whole_schema => DSchema3b})),
   % k1 from foo_t is handled like dis=bar
@@ -229,6 +245,26 @@ discriminator_default_missing_fields(_) ->
   {error, #{missing_required := [<<"k3">>]}} = openapi_schema:process(#{}, #{type => discr_t, whole_schema => DSchema_foo, required_obj_keys => error}),
   DSchema_bar = DSchemaForDis(#{type => <<"string">>, default => <<"bar">>}),
   {error, #{missing_required := [<<"k2">>]}} = openapi_schema:process(#{k3 => 1}, #{type => discr_t, whole_schema => DSchema_bar, required_obj_keys => error}),
+  ok.
+
+
+discriminator_default_wrong_format(_) ->
+  FooProp = #{dis => #{type => <<"string">>}, k1 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}},
+  BarProp = #{dis => #{type => <<"string">>}, k2 => #{type => <<"integer">>}, k3 => #{type => <<"integer">>}},
+  FooOwn = #{type => <<"object">>, properties => FooProp, required => [<<"k1">>, <<"k3">>]},
+  BarOwn = #{type => <<"object">>, properties => BarProp, required => [<<"k2">>, <<"k3">>]},
+  FooType = #{allOf => [#{'$ref' => <<"#/components/schemas/discr_t">>}, FooOwn]},
+  BarType = #{allOf => [#{'$ref' => <<"#/components/schemas/discr_t">>}, BarOwn]},
+  Mapping = #{foo => <<"#/components/schemas/foo_t">>, bar => <<"#/components/schemas/bar_t">>},
+  DSchemaForDis = fun(DisSchema) ->
+    BaseProp = #{dis => DisSchema},
+    DType = #{type => <<"object">>, properties => BaseProp, discriminator => #{propertyName => <<"dis">>, mapping => Mapping}},
+    #{components => #{schemas => #{discr_t => DType, foo_t => FooType, bar_t => BarType}}}
+  end,
+  DSchema_foo = DSchemaForDis(#{type => <<"string">>, default => <<"foo">>}),
+  {error, #{error := not_integer}} = openapi_schema:process(#{k3 => [<<"BAD">>]}, #{type => discr_t, whole_schema => DSchema_foo, required_obj_keys => error}),
+  DSchema_bar = DSchemaForDis(#{type => <<"string">>, default => <<"bar">>}),
+  {error, #{error := not_integer}} = openapi_schema:process(#{k3 => [<<"BAD">>]}, #{type => discr_t, whole_schema => DSchema_bar, required_obj_keys => error}),
   ok.
 
 
@@ -274,10 +310,18 @@ external_validators(_) ->
   {error, Err2} = openapi_schema:process(<<" ab cd">>, #{schema => Schema, validators => Validators}),
   #{error := wrong_format, format := no_space, detail := leading_space} = Err2,
 
-  % format validators work with loaded schema
-  % big_openapi.digest is a composition of allOf and object, so it needs schema to be properly prepared
-  #{password := <<"ab_cd">>} = openapi_schema:process(
-    #{username => <<"Joe">>, password => <<"ab cd">>}, #{name => big_openapi, type => digest, validators => #{password => fun no_space_validator/1}}),
+  % format validators work with loaded schema (to ensure openapi_schema:prepare_type works well)
+  % as simple value
+  <<"ab_cd">> = openapi_schema:process(<<"ab cd">>, #{name => example_openapi, type => external_validators_simple, validators => Validators}),
+  {error, _} = openapi_schema:process(<<" cd">>, #{name => example_openapi, type => external_validators_simple, validators => Validators}),
+  % as array item (nested)
+  [[<<"ab_cd">>]] = openapi_schema:process([[<<"ab cd">>]], #{name => example_openapi, type => external_validators_array, validators => Validators}),
+  {error, _} = openapi_schema:process([[<<" cd">>]], #{name => example_openapi, type => external_validators_array, validators => Validators}),
+  % as object key (nested)
+  #{in_object := #{prop1 := <<"ab_cd">>}} =
+    openapi_schema:process(#{in_object => #{prop1 => <<"ab cd">>}}, #{name => example_openapi, type => external_validators_object, validators => Validators}),
+  {error, _} =
+    openapi_schema:process(#{in_object => #{prop1 => <<" cd">>}}, #{name => example_openapi, type => external_validators_object, validators => Validators}),
 
   % format validator and pattern work simultaneously
   Schema2 = #{type => <<"string">>, format => no_space, pattern => <<"^[a-z]+$">>},
@@ -290,10 +334,21 @@ external_validators(_) ->
 
 
 min_max_length(_) ->
-  {error, #{error := too_short}} = 
+  {error, #{error := too_short, detail := 3}} =
     openapi_schema:process(<<"123">>, #{schema => #{type => <<"string">>, minLength => 5}}),
-  {error, #{error := too_long}} = 
+  {error, #{error := too_long, detail := 3}} =
     openapi_schema:process(<<"123">>, #{schema => #{type => <<"string">>, maxLength => 2}}),
+
+  {error, #{error := too_short, detail := 4}} =
+    openapi_schema:process(atom, #{schema => #{type => <<"string">>, minLength => 5}}),
+  {error, #{error := too_long, detail := 4}} =
+    openapi_schema:process(atom, #{schema => #{type => <<"string">>, maxLength => 2}}),
+
+  UTFString = unicode:characters_to_binary([128578,128579]), % 2 code points, but 8 bytes
+  {error, #{error := too_short, detail := 2}} =
+    openapi_schema:process(UTFString, #{schema => #{type => <<"string">>, minLength => 3}}),
+  {error, #{error := too_long, detail := 2}} =
+    openapi_schema:process(UTFString, #{schema => #{type => <<"string">>, maxLength => 1}}),
   ok.
 
 
@@ -392,6 +447,33 @@ one_of_const_default(_) ->
   #{k1 := world} = openapi_schema:process(
         #{},
         #{schema => FooType, apply_defaults => true}),
+  ok.
+
+one_of_const_wrong_type(_) ->
+  FooProp = #{k1 => #{oneOf => [#{const => <<"hello">>}, #{const => <<"world">>}]}},
+  FooType = #{type => <<"object">>, properties => FooProp},
+  {error, #{error := not_const}} = openapi_schema:process(#{k1 => #{}}, #{schema => FooType}),
+  {error, #{error := not_const}} = openapi_schema:process(#{k1 => []}, #{schema => FooType}),
+  ok.
+
+drop_unidirectional_keys(_) ->
+  Schema = #{
+    type => <<"object">>,
+    properties => #{
+      pn => #{type => <<"integer">>},
+      pr => #{type => <<"integer">>, readOnly => true},
+      pw => #{type => <<"integer">>, writeOnly => true}
+    }
+  },
+  % 'raw' access does not involve any read/write filtering logic
+  ObjRaw = openapi_schema:process(#{pn => 1, pr => 2, pw => 3}, #{schema => Schema, extra_obj_key => drop, access_type => raw}),
+  [pn, pr, pw] = lists:sort(maps:keys(ObjRaw)),
+  % 'write' access drops readOnly properties
+  ObjW = openapi_schema:process(#{pn => 1, pr => 2, pw => 3}, #{schema => Schema, extra_obj_key => drop, access_type => write}),
+  [pn, pw] = lists:sort(maps:keys(ObjW)),
+  % 'read' access drops writeOnly properties
+  ObjR = openapi_schema:process(#{pn => 1, pr => 2, pw => 3}, #{schema => Schema, extra_obj_key => drop, access_type => read}),
+  [pn, pr] = lists:sort(maps:keys(ObjR)),
   ok.
 
 filter_read_only_props(_) ->

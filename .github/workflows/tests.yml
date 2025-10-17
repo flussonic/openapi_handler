@@ -1,0 +1,51 @@
+name: Erlang CI
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+permissions:
+  contents: read
+
+jobs:
+  common_test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        otp_ver: [27, 28, latest]
+    container:
+      image: erlang:${{ matrix.otp_ver }}
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Run tests
+      env:
+        REBAR_CONFIG: rebar.config_
+      run: rebar3 as dev ct --logdir test-logs --readable true -vv
+    - name: upload CT report
+      uses: actions/upload-artifact@v4
+      with:
+        name: ct_report_${{ matrix.otp_ver }}
+        path: test-logs/ct_run*/
+
+  common_test_legacy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        otp_ver: [24, 25, 26]
+    container:
+      image: erlang:${{ matrix.otp_ver }}
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Run tests
+      env:
+        REBAR_CONFIG: rebar.config.pre27_
+      run: rebar3 as dev ct --logdir test-logs --readable true -vv
+    - name: upload CT report
+      uses: actions/upload-artifact@v4
+      with:
+        name: ct_report_${{ matrix.otp_ver }}
+        path: test-logs/ct_run*/
