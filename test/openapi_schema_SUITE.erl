@@ -13,6 +13,7 @@ groups() ->
       read_default,
       extra_keys_error,
       extra_keys_drop,
+      extra_keys_pass,
       null_in_array,
       nullable_by_oneof,
       discriminator,
@@ -82,6 +83,14 @@ extra_keys_drop(_) ->
   Json = #{<<"name">> => <<"read_default">>, extra_key1 => <<"abc">>, <<"extrakey2">> => def},
   Schema = persistent_term:get({openapi_handler_schema,test_openapi}),
   #{inputs := [],name := <<"read_default">>,static := true} = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true}),
+  ok.
+
+extra_keys_pass(_) ->
+  Json = #{<<"name">> => <<"read_default">>, extra_key1 => <<"abc">>, <<"extrakey2">> => def},
+  Schema = persistent_term:get({openapi_handler_schema,test_openapi}),
+  #{inputs := [],name := <<"read_default">>,static := true,
+      extra_key1 := <<"abc">>,<<"extrakey2">> := def
+   } = openapi_schema:process(Json, #{type => stream_config, whole_schema => Schema, apply_defaults => true, extra_obj_key => pass}),
   ok.
 
 
