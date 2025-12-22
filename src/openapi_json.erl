@@ -22,12 +22,22 @@ decode_with_atoms(Bin) ->
 encode(Source) ->
   Encode = fun
     (undefined, Encoder) -> json:encode_atom(null, Encoder);
+    (<<Bin/binary>>, _Encoder) -> maybe_fix_invalid_unicode(Bin);
     (Other, Encoder) -> json:encode_value(Other, Encoder)
   end,
   try
     iolist_to_binary(json:encode(Source, Encode))
   catch
     _:_:_ -> iolist_to_binary(json:encode(#{error => error_in_json_encoder, input => iolist_to_binary(io_lib:format("~p",[Source]))}))
+  end.
+
+maybe_fix_invalid_unicode(Bin0) ->
+  case unicode:characters_to_binary(Bin0, utf8, utf8) of
+    <<Bin/binary>> ->
+      json:encode_binary(Bin);
+    _ ->
+      <<Bin/binary>> = unicode:characters_to_binary(Bin0, latin1, utf8),
+      json:encode_binary_escape_all(Bin)
   end.
 
 -else. %% ?OTP_RELEASE < 27

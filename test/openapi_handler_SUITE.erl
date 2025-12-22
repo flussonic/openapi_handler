@@ -32,7 +32,8 @@ groups() ->
      check_nonsense_content_responses,
      required_keys_filter,
      select_not_filters_required_keys,
-     unavailable_error
+     unavailable_error,
+     fix_invalid_unicode
    ]}
   ].
 
@@ -463,3 +464,8 @@ unavailable_error(_) ->
   {error,unavailable} = openapi_client:call(test_schema_api, selectCollectionFields, #{json_body => #{unavailable => true}}),
   ok.
 
+
+fix_invalid_unicode(_) ->
+  <<"{\"utf8\":\"aбc\"}"/utf8>> = openapi_json:encode(#{utf8 => <<"aбc"/utf8>>}),
+  <<"{\"utf8_fix\":\"a\\u0083c\"}">> = openapi_json:encode(#{utf8_fix => <<"a", 131, "c">>}),
+  ok.
