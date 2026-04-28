@@ -276,6 +276,7 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
     '$delete' => #{type => <<"boolean">>}
   },
   Required = get_required_keys(Schema, Opts),
+  AllowedKeys = maps:merge(Artificial, Properties),
   Encoded = maps:fold(fun
     (_, _, {error, _} = E) ->
       E;
@@ -332,10 +333,10 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
           Obj
       end,
       UpdatedObj
-  end, #{}, maps:merge(Artificial,Properties)),
-  Encoded1 = case check_required_keys(Encoded, Schema, Required, Opts) of
+  end, #{}, AllowedKeys),
+  Encoded1 = case check_required_keys(Encoded, Required, Opts) of
     {error, E} -> {error, E};
-    Encoded -> check_extra_keys(Input, Encoded, Opts)
+    ok -> check_extra_keys(Input, Encoded, AllowedKeys, Opts)
   end,
   merge_objects(Opts, Schema, Required, [Encoded1]);
 
@@ -563,21 +564,22 @@ validate_string_pattern(Input, RegExp) ->
   end.
 
 
-check_required_keys(#{} = Encoded, #{} = _Schema, Required, #{required_obj_keys := error} = _Opts) ->
-  case Required -- maps:keys(add_binary_keys(Encoded)) of
-    [] -> Encoded;
+check_required_keys(#{} = Encoded, Required, #{required_obj_keys := error} = _Opts) ->
+  case missing_keys(Required, Encoded) of
+    [] -> ok;
     Missing -> {error, #{missing_required => Missing}}
   end;
-check_required_keys(Encoded, _Schema, _Required, _Opts) ->
-  Encoded.
+
+check_required_keys(_Encoded, _Required, _Opts) ->
+  ok.
+
 
 get_required_keys(#{required := [_| _] = Required, properties := Properties}, #{access_type := Access}) ->
-  Properties1 = add_binary_keys(Properties),
   lists:filter(fun(P) ->
-    case Properties1 of
-      #{P := #{readOnly := true}} when Access == write -> false;
-      #{P := #{writeOnly := true}} when Access == read -> false;
-      #{P := _} -> true;
+    case get_atom_key(P, Properties) of
+      #{readOnly := true} when Access == write -> false;
+      #{writeOnly := true} when Access == read -> false;
+      #{} -> true;
       _ -> false
     end
   end, Required);
@@ -586,28 +588,63 @@ get_required_keys(_Schema, _Opts) ->
 
 
 check_extra_keys(Input, Encoded, #{extra_obj_key := error} = Opts) when is_map(Input) andalso is_map(Encoded) ->
-  ExtraKeys = maps:keys(Input) -- maps:keys(add_binary_keys(Encoded)),
+  check_extra_keys(Input, Encoded, Encoded, Opts);
+
+check_extra_keys(Input, Encoded, #{extra_obj_key := pass} = Opts) when is_map(Input) andalso is_map(Encoded) ->
+  check_extra_keys(Input, Encoded, Encoded, Opts);
+
+check_extra_keys(_Input, Encoded, _Opts) ->
+  Encoded.
+
+
+check_extra_keys(Input, Encoded, AllowedKeys, #{extra_obj_key := error} = Opts) when is_map(Input) andalso is_map(Encoded) ->
+  ExtraKeys = missing_keys(maps:keys(Input), AllowedKeys),
   case ExtraKeys of
     ['$explain'] when #{explain => [required]} == Opts -> Encoded;
     [_|_] -> {error, #{extra_keys => ExtraKeys, encoded => Encoded}};
     _ -> Encoded
   end;
 
-check_extra_keys(Input, Encoded, #{extra_obj_key := pass}) when is_map(Input) andalso is_map(Encoded) ->
+check_extra_keys(Input, Encoded, AllowedKeys, #{extra_obj_key := pass}) when is_map(Input) andalso is_map(Encoded) ->
   % pass extra keys from input, filter already encoded keys
   EncodedKeys = [K || K <- maps:keys(Encoded), is_atom(K)],
-  ExtraKeys = maps:keys(Input) -- [atom_to_binary(K) || K <- EncodedKeys],
+  ExtraKeys = missing_keys(maps:keys(Input), AllowedKeys),
   maps:merge(maps:with(EncodedKeys, Encoded), maps:with(ExtraKeys, Input));
 
-check_extra_keys(_Input, Encoded, _Opts) ->
+check_extra_keys(_Input, Encoded, _AllowedKeys, _Opts) ->
   Encoded.
 
 
-add_binary_keys(Map) ->
-  maps:fold(fun
-    (K, V, Acc) when is_atom(K) -> Acc#{atom_to_binary(K) => V};
-    (_K, _V, Acc) -> Acc
-  end, Map, Map).
+missing_keys(List, Map) ->
+  [K || K <- List, not has_atom_key(K, Map)].
+
+
+has_atom_key(K, Map) ->
+  case existing_atom_key(K) of
+    {ok, AtomKey} ->
+      is_map_key(AtomKey, Map);
+    error ->
+      false
+  end.
+
+
+get_atom_key(K, Map) ->
+  case existing_atom_key(K) of
+    {ok, AtomKey} ->
+      maps:get(AtomKey, Map, undefined);
+    error ->
+      undefined
+  end.
+
+
+existing_atom_key(K) when is_atom(K) ->
+  {ok, K};
+existing_atom_key(K) when is_binary(K) ->
+  try
+    {ok, binary_to_existing_atom(K, latin1)}
+  catch
+    error:badarg -> error
+  end.
 
 
 merge_objects(Opts, Schema, Required, Objs) ->
