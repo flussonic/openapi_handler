@@ -7,7 +7,7 @@
     {deps, [
       jsx,
       yamerl,
-      {cowboy, "2.12.0"},
+      {cowboy, "2.14.2"},
       {lhttpc, {git, "https://github.com/erlyvideo/lhttpc.git", {branch, "master"}}},
       redbug
     ]},
