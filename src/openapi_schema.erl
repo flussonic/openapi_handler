@@ -153,12 +153,12 @@ encode3(#{allOf := Choices}, Opts, Input, Path) ->
     ({N,Choice}, Obj) ->
       case encode3(Choice, Opts, Input, Path ++ [N]) of
         {error, #{extra_keys := _Extrakeys, encoded := Obj1}} ->
-          merge_objects(Opts, #{}, [Obj, Obj1]);  % keep processing, all choices have to be processed for allOf
+          merge_objects(Opts, #{}, [], [Obj, Obj1]);  % keep processing, all choices have to be processed for allOf
         {error, E} ->
           {error, E};
         #{} = Obj1 ->
           % explain in Obj1 is already defined by encode3, so pass a bogus schema
-          merge_objects(Opts, #{}, [Obj, Obj1])
+          merge_objects(Opts, #{}, [], [Obj, Obj1])
       end
   end, #{}, lists:zip(lists:seq(0,length(Choices)-1),Choices)),
   check_extra_keys(Input, Encoded, Opts);
@@ -248,7 +248,8 @@ encode3(#{oneOf := Choices}, Opts, Input, Path) ->
         Encoded;
       {error, E} ->
         {error, E};
-      V -> {ok, V}
+      V ->
+        {ok, V}
     end
   end, lists:zip(Choices,lists:seq(0,length(Choices)-1))),
   %% If there are several valid results, choose non-empty one
@@ -274,16 +275,16 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
     '$index' => #{type => <<"integer">>},
     '$delete' => #{type => <<"boolean">>}
   },
+  Required = get_required_keys(Schema, Opts),
   Encoded = maps:fold(fun
     (_, _, {error, _} = E) ->
       E;
     (Field, #{} = Prop, Obj) ->
       FieldBin = atom_to_binary(Field,latin1),
 
-      RequiredKeys = get_required_keys(Schema, Opts),
       IsReadOnly = maps:get(readOnly, Prop, false),
       IsPrimary = maps:get('x-primary-key', Prop, false),
-      IsRequired = (lists:member(FieldBin, RequiredKeys) orelse IsPrimary),
+      IsRequired = (lists:member(FieldBin, Required) orelse IsPrimary),
       IsWriteAccess = maps:get(access_type, Opts, read) == write,
 
       ApplyDefaults = maps:get(apply_defaults, Opts, false),
@@ -332,11 +333,11 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
       end,
       UpdatedObj
   end, #{}, maps:merge(Artificial,Properties)),
-  Encoded1 = case check_required_keys(Encoded, Schema, Opts) of
+  Encoded1 = case check_required_keys(Encoded, Schema, Required, Opts) of
     {error, E} -> {error, E};
     Encoded -> check_extra_keys(Input, Encoded, Opts)
   end,
-  merge_objects(Opts, Schema, [Encoded1]);
+  merge_objects(Opts, Schema, Required, [Encoded1]);
 
 
 encode3(#{type := <<"object">>}, _Opts, #{} = Input, _Path) ->
@@ -562,13 +563,12 @@ validate_string_pattern(Input, RegExp) ->
   end.
 
 
-check_required_keys(#{} = Encoded, #{} = Schema, #{required_obj_keys := error} = Opts) ->
-  Required = get_required_keys(Schema, Opts),
+check_required_keys(#{} = Encoded, #{} = _Schema, Required, #{required_obj_keys := error} = _Opts) ->
   case Required -- maps:keys(add_binary_keys(Encoded)) of
     [] -> Encoded;
     Missing -> {error, #{missing_required => Missing}}
   end;
-check_required_keys(Encoded, _Schema, _Opts) ->
+check_required_keys(Encoded, _Schema, _Required, _Opts) ->
   Encoded.
 
 get_required_keys(#{required := [_| _] = Required, properties := Properties}, #{access_type := Access}) ->
@@ -610,13 +610,13 @@ add_binary_keys(Map) ->
   end, Map, Map).
 
 
-merge_objects(Opts, Schema, Objs) ->
+merge_objects(Opts, Schema, Required, Objs) ->
   ExplainMap = case Opts of
     #{explain := [required]} ->
       RequiredKeys = lists:foldl(fun
         ({error, _}, Acc) -> Acc;
         (Obj, Acc) -> lists:merge(maps:get(required, maps:get('$explain', Obj, #{}), []), Acc)
-      end, get_required_keys(Schema, Opts), Objs),
+      end, Required, Objs),
       #{'$explain' => #{required => RequiredKeys}};
     #{explain := [effective_schema]} ->
       PrevEffSchemas = [ES || #{'$explain' := #{effective_schema := ES}} <- Objs],
