@@ -34,7 +34,8 @@ groups() ->
       check_explain_on_error,
       one_of_integer_const,
       one_of_const_default,
-      filter_read_only_props
+      filter_read_only_props,
+      allof_extra_keys
     ]},
     {introspection, [], [
       fetch_type,
@@ -463,4 +464,29 @@ discriminator_effective_schema(_) ->
   [2] = maps:get('x-objAttr2', Eff1bar),
   [dis, k2, k3] = lists:sort(maps:keys(Eff1barProps)),
   #{k2 := #{'x-attr2' := true}} = Eff1barProps,
+  ok.
+
+
+allof_extra_keys(_) ->
+  Schema = #{
+    allOf => [
+      #{type => <<"object">>, properties => #{k1 => #{type => <<"integer">>}}},
+      #{type => <<"object">>, properties => #{k2 => #{type => <<"integer">>}}}
+    ]
+  },
+
+  Input = #{
+    <<"k1">> => 1,
+    extra1 => <<"abc">>,
+    <<"extra2">> => def
+  },
+
+  ExpectPass = #{k1 => 1, extra1 => <<"abc">>, <<"extra2">> => def},
+  ExpectPass = openapi_schema:process(Input, #{schema => Schema, extra_obj_key => pass}),
+
+  ExpectDrop = #{k1 => 1},
+  ExpectDrop = openapi_schema:process(Input, #{schema => Schema}),
+
+  {error, #{encoded := #{k1 := 1}, extra_keys := [extra1, <<"extra2">>]}} =
+    openapi_schema:process(Input, #{schema => Schema, extra_obj_key => error}),
   ok.
