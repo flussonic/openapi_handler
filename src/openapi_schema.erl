@@ -17,6 +17,8 @@
   is_map_key(const,Schema)
 )).
 
+-define(X_ONEOF_INDEXED, 'x-oneOf-indexed').
+
 -define(AVAILABLE_EXPLAIN_KEYS, [required, effective_schema]).
 
 
@@ -85,7 +87,8 @@ prepare_type(#{allOf := Types} = Type0) ->
 prepare_type(#{anyOf := Types} = Type0) ->
   Type0#{anyOf := [prepare_type(T) || T <- Types]};
 prepare_type(#{oneOf := Types} = Type0) ->
-  Type0#{oneOf := [prepare_type(T) || T <- Types]};
+  Types1 = [prepare_type(T) || T <- Types],
+  Type0#{oneOf := Types1, ?X_ONEOF_INDEXED => index_choices(Types1)};
 prepare_type(#{type := <<"object">>, properties := Props} = Type0) ->
   Type0#{properties => maps:map(fun(_, T) -> prepare_type(T) end, Props)};
 prepare_type(#{} = Type0) ->
@@ -240,27 +243,12 @@ encode3(#{discriminator := #{propertyName := DKey, mapping := DMap}} = Schema, O
       end
   end;
 
-encode3(#{oneOf := Choices}, Opts, Input, Path) ->
-  EncodedList = lists:map(fun({Choice,I}) ->
-    case encode3(Choice, Opts, Input, Path ++ [I]) of
-      {error, #{extra_keys := _Extrakeys, encoded := Encoded}} ->
-        % Wrong oneOf choice. Will try other ones and check results
-        Encoded;
-      {error, E} ->
-        {error, E};
-      V ->
-        {ok, V}
-    end
-  end, lists:zip(Choices,lists:seq(0,length(Choices)-1))),
-  %% If there are several valid results, choose non-empty one
-  case [M || {ok, #{} = M} <- EncodedList, map_size(M) > 0] of
-    [Encoded|_] -> Encoded;
-    _ ->
-      case [V || {ok, V} <- EncodedList] of
-        [Encoded|_] -> Encoded;
-        _ -> hd(EncodedList)
-      end
-  end;
+encode3(#{oneOf := Choices} = Schema, Opts, Input, Path) ->
+  IndexedChoices = case maps:get(?X_ONEOF_INDEXED, Schema, undefined) of
+    undefined -> index_choices(Choices);
+    PreparedChoices -> PreparedChoices
+  end,
+  encode_one_of(IndexedChoices, Opts, Input, Path, undefined, undefined);
 
 encode3(#{type := <<"object">>, maxItems := MaxItems}, #{}, #{} = Input, Path) when map_size(Input) > MaxItems ->
   {error, #{error => too_many_items, detail => map_size(Input), path => Path}};
@@ -522,6 +510,40 @@ encode3_multi_types([Type| Types], Schema, Opts, Input, Path) ->
   case encode3(Schema#{type => Type}, Opts, Input, Path) of
     {error, _ } -> encode3_multi_types(Types, Schema, Opts, Input, Path);
     Encoded -> Encoded
+  end.
+
+
+index_choices(Choices) ->
+  lists:zip(lists:seq(0, length(Choices) - 1), Choices).
+
+
+encode_one_of([], _Opts, _Input, _Path, undefined, FirstResult) ->
+  FirstResult;
+encode_one_of([], _Opts, _Input, _Path, FirstOk, _FirstResult) ->
+  FirstOk;
+encode_one_of([{I, Choice}|Rest], Opts, Input, Path, FirstOk, FirstResult0) ->
+  Result = case encode3(Choice, Opts, Input, Path ++ [I]) of
+    {error, #{extra_keys := _Extrakeys, encoded := Encoded}} ->
+      % Wrong oneOf choice. Will try other ones and check results
+      Encoded;
+    {error, E} ->
+      {error, E};
+    V ->
+      {ok, V}
+  end,
+  FirstResult = case FirstResult0 of
+    undefined -> Result;
+    _ -> FirstResult0
+  end,
+  case Result of
+    {ok, #{} = EncodedMap} when map_size(EncodedMap) > 0 ->
+      EncodedMap;
+    {ok, EncodedValue} when FirstOk == undefined ->
+      encode_one_of(Rest, Opts, Input, Path, EncodedValue, FirstResult);
+    {ok, _EncodedValue} ->
+      encode_one_of(Rest, Opts, Input, Path, FirstOk, FirstResult);
+    _ ->
+      encode_one_of(Rest, Opts, Input, Path, FirstOk, FirstResult)
   end.
 
 
