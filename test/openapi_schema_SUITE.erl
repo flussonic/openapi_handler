@@ -15,6 +15,7 @@ groups() ->
       extra_keys_drop,
       extra_keys_pass,
       null_in_array,
+      input_null_does_not_trigger_default,
       nullable_by_oneof,
       discriminator,
       discriminator_default_missing_fields,
@@ -107,6 +108,18 @@ null_in_array(_) ->
   [<<"a">>, undefined, undefined, <<"b">>] = openapi_schema:process(
                  [<<"a">>, null, undefined, <<"b">>],
                  #{schema => #{type => <<"array">>,items => #{type => <<"string">>, nullable => true}}}),
+  ok.
+
+
+input_null_does_not_trigger_default(_) ->
+  Schema = #{
+    type => <<"object">>,
+    properties => #{
+      k1 => #{type => <<"string">>, default => <<"fallback">>}
+    }
+  },
+  Expected = #{},
+  Expected = openapi_schema:process(#{k1 => null}, #{schema => Schema, apply_defaults => true}),
   ok.
 
 
