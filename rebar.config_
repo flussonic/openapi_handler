@@ -11,6 +11,9 @@
       {lhttpc, {git, "https://github.com/erlyvideo/lhttpc.git", {branch, "master"}}},
       redbug
     ]},
+    {dialyzer, [
+      {plt_extra_apps, [cowboy, cowlib, lhttpc]}
+    ]},
     {ct_opts, [{ct_hooks, [cth_surefire]}]}
   ]}
 ]}.

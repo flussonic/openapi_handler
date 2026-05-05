@@ -22,3 +22,11 @@ run-test:
     expire_in: 1 week
     paths:
       - test-logs
+
+dialyzer:
+  stage: test
+  needs:
+    - prepare-src
+  script:
+    - mkdir -p test-logs
+    - docker run --rm openapi_handler make dialyzer

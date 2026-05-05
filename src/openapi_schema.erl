@@ -265,63 +265,20 @@ encode3(#{type := <<"object">>, properties := Properties} = Schema, #{query := Q
   },
   Required = get_required_keys(Schema, Opts),
   AllowedKeys = maps:merge(Artificial, Properties),
-  Encoded = maps:fold(fun
-    (_, _, {error, _} = E) ->
-      E;
-    (Field, #{} = Prop, Obj) ->
-      FieldBin = atom_to_binary(Field,latin1),
 
-      IsReadOnly = maps:get(readOnly, Prop, false),
-      IsPrimary = maps:get('x-primary-key', Prop, false),
-      IsRequired = (lists:member(FieldBin, Required) orelse IsPrimary),
-      IsWriteAccess = maps:get(access_type, Opts, read) == write,
-
-      ApplyDefaults = maps:get(apply_defaults, Opts, false),
-      EffectiveValue = case {Input, Prop} of
-        {#{Field := Value_}, #{}} ->
-          {ok, Value_};
-        {#{FieldBin := Value_}, #{}} ->
-          {ok, Value_};
-        {#{}, #{default := DefaultValue}} when ApplyDefaults ->
-          {ok, DefaultValue};
-        {#{}, #{}} ->
-          undefined
-      end,
-
-      NullableProp = case Prop of
-        #{nullable := true} ->
-          true;
-        #{oneOf := OneOf} ->
-          lists:any(fun(#{type := <<"null">>}) -> true; (_) -> false end, OneOf);
-        #{} ->
-          false
-      end,
-      Patching = maps:get(patch, Opts, undefined) == true,
-      UpdatedObj = case EffectiveValue of
-        {ok, NullFlag} when Query andalso (NullFlag == null orelse NullFlag == not_null) ->
-          Obj#{Field => NullFlag};
-
-        % Silently drop undefined values for non-nullable fields
-        {ok, Null} when (Null == null orelse Null == undefined) andalso
-          not NullableProp andalso not Patching ->
-          Obj;
-        % Silently drop read only fields with write access
-        {ok, _Value} when IsWriteAccess andalso IsReadOnly andalso (not IsRequired) ->
-          Obj;
-        {ok, Value} ->
-          case encode3(Prop#{nullable => NullableProp}, Opts, Value, Path ++ [Field]) of
-            {error, _} = E ->
-              E;
-            Value1 when Query andalso (is_number(Value1) orelse is_atom(Value1) orelse is_binary(Value1)) ->
-              Obj#{Field => maps:get(Field,Obj,[]) ++ [Value1]};
-            Value1 ->
-              Obj#{Field => Value1}
-          end;
-        undefined ->
-          Obj
-      end,
-      UpdatedObj
-  end, #{}, AllowedKeys),
+  {Encoded0, PresentFields} = maps:fold(fun
+    (_, _, {{error, _} = E, Seen}) ->
+      {E, Seen};
+    (InputField, Value, {Obj, Seen}) ->
+      case object_input_field(InputField, AllowedKeys) of
+        {ok, Field, Prop} ->
+          {encode_object_field(Field, Prop, Value, Query, Required, Opts, Path, Obj),
+            Seen#{Field => true}};
+        _ ->
+          {Obj, Seen}
+      end
+  end, {#{}, #{}}, Input),
+  Encoded = apply_defaults(Encoded0, AllowedKeys, PresentFields, Query, Required, Opts, Path),
   Encoded1 = case check_required_keys(Encoded, Required, Opts) of
     {error, E} -> {error, E};
     ok -> check_extra_keys(Input, Encoded, AllowedKeys, Opts)
@@ -596,6 +553,79 @@ check_required_keys(_Encoded, _Required, _Opts) ->
   ok.
 
 
+apply_defaults(#{} = Encoded, AllowedKeys, PresentFields, Query, Required, #{apply_defaults := true} = Opts, Path) ->
+  maps:fold(fun
+    (Field, #{default := DefaultValue} = Prop, #{} = Obj) ->
+      case is_map_key(Field, PresentFields) orelse is_map_key(Field, Obj) of
+        true ->
+          Obj;
+        false ->
+          encode_object_field(Field, Prop, DefaultValue, Query, Required, Opts, Path, Obj)
+      end;
+    (_, _, ObjOrErr) ->
+      ObjOrErr
+  end, Encoded, AllowedKeys);
+
+apply_defaults(Encoded, _AllowedKeys, _PresentFields, _Query, _Required, _Opts, _Path) ->
+  Encoded.
+
+
+encode_object_field(Field, #{} = Prop, Value, Query, Required, Opts, Path, Obj) ->
+  FieldBin = atom_to_binary(Field, latin1),
+  IsReadOnly = maps:get(readOnly, Prop, false),
+  IsPrimary = maps:get('x-primary-key', Prop, false),
+  IsRequired = (lists:member(FieldBin, Required) orelse IsPrimary),
+  IsWriteAccess = maps:get(access_type, Opts, read) == write,
+  NullableProp = case Prop of
+    #{nullable := true} ->
+      true;
+    #{oneOf := OneOf} ->
+      lists:any(fun(#{type := <<"null">>}) -> true; (_) -> false end, OneOf);
+    #{} ->
+      false
+  end,
+  Patching = maps:get(patch, Opts, undefined) == true,
+  if
+    Query andalso (Value == null orelse Value == not_null) ->
+      Obj#{Field => Value};
+    % Silently drop undefined values for non-nullable fields
+    (Value == null orelse Value == undefined) andalso not NullableProp andalso not Patching ->
+      Obj;
+    % Silently drop read only fields with write access
+    IsWriteAccess andalso IsReadOnly andalso (not IsRequired) ->
+      Obj;
+    true ->
+      case encode3(Prop#{nullable => NullableProp}, Opts, Value, Path ++ [Field]) of
+        {error, _} = E ->
+          E;
+        Value1 when Query andalso (is_number(Value1) orelse is_atom(Value1) orelse is_binary(Value1)) ->
+          Obj#{Field => maps:get(Field, Obj, []) ++ [Value1]};
+        Value1 ->
+          Obj#{Field => Value1}
+      end
+  end.
+
+
+object_input_field(Field, AllowedKeys) when is_atom(Field) ->
+  case maps:get(Field, AllowedKeys, undefined) of
+    #{} = Prop ->
+      {ok, Field, Prop};
+    _ ->
+      error
+  end;
+
+object_input_field(FieldBin, AllowedKeys) when is_binary(FieldBin) ->
+  case existing_atom(FieldBin) of
+    {ok, Field} ->
+      object_input_field(Field, AllowedKeys);
+    error ->
+      error
+  end;
+
+object_input_field(_Field, _AllowedKeys) ->
+  error.
+
+
 get_required_keys(#{required := [_| _] = Required, properties := Properties}, #{access_type := Access}) ->
   lists:filter(fun(P) ->
     case get_atom_key(P, Properties) of
@@ -642,7 +672,7 @@ missing_keys(List, Map) ->
 
 
 has_atom_key(K, Map) ->
-  case existing_atom_key(K) of
+  case existing_atom(K) of
     {ok, AtomKey} ->
       is_map_key(AtomKey, Map);
     error ->
@@ -651,7 +681,7 @@ has_atom_key(K, Map) ->
 
 
 get_atom_key(K, Map) ->
-  case existing_atom_key(K) of
+  case existing_atom(K) of
     {ok, AtomKey} ->
       maps:get(AtomKey, Map, undefined);
     error ->
@@ -659,9 +689,10 @@ get_atom_key(K, Map) ->
   end.
 
 
-existing_atom_key(K) when is_atom(K) ->
+existing_atom(K) when is_atom(K) ->
   {ok, K};
-existing_atom_key(K) when is_binary(K) ->
+
+existing_atom(K) when is_binary(K) ->
   try
     {ok, binary_to_existing_atom(K, latin1)}
   catch
